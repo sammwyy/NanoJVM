@@ -119,13 +119,14 @@ static int cf_utf8_equals(
     return memcmp(p, s, want_len) == 0;
 }
 
-static int parse_code_attribute(
+static int parse_code_attribute_to_method(
     struct jmevm_classfile *cf,
     cf_reader *r,
-    size_t attribute_length)
+    size_t attribute_length,
+    struct jmevm_method *m)
 {
     /* Code_attribute_length covers everything starting at max_stack. */
-    if (r == NULL || cf == NULL) {
+    if (r == NULL || cf == NULL || m == NULL) {
         return JMEVM_CLASSFILE_ERR_BAD_ARGS;
     }
     if (attribute_length > (r->len - r->pos)) {
@@ -158,11 +159,10 @@ static int parse_code_attribute(
     if ((size_t)code_length > code_attr_end - sub.pos) {
         return JMEVM_CLASSFILE_ERR_TRUNCATED;
     }
-    cf->main_code = cf->buf + sub.pos;
-    cf->main_code_len = (size_t)code_length;
-    cf->main_max_stack = max_stack;
-    cf->main_max_locals = max_locals;
-    cf->has_main = 1;
+    m->code = cf->buf + sub.pos;
+    m->code_len = (size_t)code_length;
+    m->max_stack = max_stack;
+    m->max_locals = max_locals;
 
     rc = cf_skip(&sub, (size_t)code_length);
     if (rc != JMEVM_CLASSFILE_OK) {
@@ -270,7 +270,15 @@ jmevm_classfile *jmevm_classfile_load_from_buffer(const uint8_t *buf, size_t len
     cf->cp_tag = (uint8_t *)calloc(cp_count, sizeof(uint8_t));
     cf->cp_utf8_off = (uint32_t *)calloc(cp_count, sizeof(uint32_t));
     cf->cp_utf8_len = (uint16_t *)calloc(cp_count, sizeof(uint16_t));
-    if (cf->cp_tag == NULL || cf->cp_utf8_off == NULL || cf->cp_utf8_len == NULL) {
+    cf->cp_class_name_index = (uint16_t *)calloc(cp_count, sizeof(uint16_t));
+    cf->cp_nat_name_index = (uint16_t *)calloc(cp_count, sizeof(uint16_t));
+    cf->cp_nat_desc_index = (uint16_t *)calloc(cp_count, sizeof(uint16_t));
+    cf->cp_methodref_class_index = (uint16_t *)calloc(cp_count, sizeof(uint16_t));
+    cf->cp_methodref_nat_index = (uint16_t *)calloc(cp_count, sizeof(uint16_t));
+    if (cf->cp_tag == NULL || cf->cp_utf8_off == NULL || cf->cp_utf8_len == NULL ||
+        cf->cp_class_name_index == NULL || cf->cp_nat_name_index == NULL ||
+        cf->cp_nat_desc_index == NULL || cf->cp_methodref_class_index == NULL ||
+        cf->cp_methodref_nat_index == NULL) {
         jmevm_classfile_destroy(cf);
         return NULL;
     }
@@ -306,6 +314,13 @@ jmevm_classfile *jmevm_classfile_load_from_buffer(const uint8_t *buf, size_t len
             break;
         }
         case CONSTANT_Class:
+            /* u2 name_index */
+            rc = cf_read_u2(&r, &cf->cp_class_name_index[i]);
+            if (rc != JMEVM_CLASSFILE_OK) {
+                jmevm_classfile_destroy(cf);
+                return NULL;
+            }
+            break;
         case CONSTANT_String:
             rc = cf_skip(&r, 2);
             if (rc != JMEVM_CLASSFILE_OK) {
@@ -315,7 +330,13 @@ jmevm_classfile *jmevm_classfile_load_from_buffer(const uint8_t *buf, size_t len
             break;
 
         case CONSTANT_NameAndType:
-            rc = cf_skip(&r, 4);
+            /* u2 name_index, u2 descriptor_index */
+            rc = cf_read_u2(&r, &cf->cp_nat_name_index[i]);
+            if (rc != JMEVM_CLASSFILE_OK) {
+                jmevm_classfile_destroy(cf);
+                return NULL;
+            }
+            rc = cf_read_u2(&r, &cf->cp_nat_desc_index[i]);
             if (rc != JMEVM_CLASSFILE_OK) {
                 jmevm_classfile_destroy(cf);
                 return NULL;
@@ -323,8 +344,25 @@ jmevm_classfile *jmevm_classfile_load_from_buffer(const uint8_t *buf, size_t len
             break;
 
         case CONSTANT_Methodref:
-        case CONSTANT_Fieldref:
         case CONSTANT_InterfaceMethodref:
+        case CONSTANT_Fieldref: {
+            /* u2 class_index, u2 name_and_type_index */
+            uint16_t class_index = 0;
+            uint16_t nat_index = 0;
+            rc = cf_read_u2(&r, &class_index);
+            if (rc != JMEVM_CLASSFILE_OK) {
+                jmevm_classfile_destroy(cf);
+                return NULL;
+            }
+            rc = cf_read_u2(&r, &nat_index);
+            if (rc != JMEVM_CLASSFILE_OK) {
+                jmevm_classfile_destroy(cf);
+                return NULL;
+            }
+            cf->cp_methodref_class_index[i] = class_index;
+            cf->cp_methodref_nat_index[i] = nat_index;
+            break;
+        }
         case CONSTANT_Dynamic:
         case CONSTANT_InvokeDynamic:
             rc = cf_skip(&r, 4);
@@ -399,7 +437,8 @@ jmevm_classfile *jmevm_classfile_load_from_buffer(const uint8_t *buf, size_t len
         jmevm_classfile_destroy(cf);
         return NULL;
     }
-    rc = cf_skip(&r, 2);
+    uint16_t this_class_index = 0;
+    rc = cf_read_u2(&r, &this_class_index);
     if (rc != JMEVM_CLASSFILE_OK) {
         jmevm_classfile_destroy(cf);
         return NULL;
@@ -409,6 +448,7 @@ jmevm_classfile *jmevm_classfile_load_from_buffer(const uint8_t *buf, size_t len
         jmevm_classfile_destroy(cf);
         return NULL;
     }
+    cf->this_class_name_cp_index = this_class_index ? cf->cp_class_name_index[this_class_index] : 0;
 
     /* interfaces */
     uint16_t interfaces_count = 0;
@@ -473,6 +513,15 @@ jmevm_classfile *jmevm_classfile_load_from_buffer(const uint8_t *buf, size_t len
         return NULL;
     }
 
+    cf->methods_count = methods_count;
+    if (methods_count > 0) {
+        cf->methods = (struct jmevm_method *)calloc(methods_count, sizeof(*cf->methods));
+        if (cf->methods == NULL) {
+            jmevm_classfile_destroy(cf);
+            return NULL;
+        }
+    }
+
     static const char main_name[] = "main";
     static const char main_desc[] = "([Ljava/lang/String;)V";
     static const char code_attr_name[] = "Code";
@@ -505,6 +554,12 @@ jmevm_classfile *jmevm_classfile_load_from_buffer(const uint8_t *buf, size_t len
             return NULL;
         }
 
+        struct jmevm_method *m = cf->methods ? &cf->methods[i] : NULL;
+        if (m != NULL) {
+            m->name_cp_index = name_index;
+            m->descriptor_cp_index = descriptor_index;
+        }
+
         int is_main = cf_utf8_equals(cf, name_index, main_name) &&
                       cf_utf8_equals(cf, descriptor_index, main_desc);
 
@@ -523,11 +578,18 @@ jmevm_classfile *jmevm_classfile_load_from_buffer(const uint8_t *buf, size_t len
                 return NULL;
             }
 
-            if (is_main && cf_utf8_equals(cf, attribute_name_index, code_attr_name) && cf->main_code == NULL) {
-                rc = parse_code_attribute(cf, &r, (size_t)attribute_length);
+            if (cf_utf8_equals(cf, attribute_name_index, code_attr_name) && m != NULL && m->code == NULL) {
+                rc = parse_code_attribute_to_method(cf, &r, (size_t)attribute_length, m);
                 if (rc != JMEVM_CLASSFILE_OK) {
                     jmevm_classfile_destroy(cf);
                     return NULL;
+                }
+                if (is_main && cf->main_code == NULL) {
+                    cf->has_main = 1;
+                    cf->main_code = m->code;
+                    cf->main_code_len = m->code_len;
+                    cf->main_max_stack = m->max_stack;
+                    cf->main_max_locals = m->max_locals;
                 }
             } else {
                 rc = cf_skip(&r, (size_t)attribute_length);
@@ -557,7 +619,30 @@ void jmevm_classfile_destroy(jmevm_classfile *cf)
     free(cf->cp_tag);
     free(cf->cp_utf8_off);
     free(cf->cp_utf8_len);
+    free(cf->cp_class_name_index);
+    free(cf->cp_nat_name_index);
+    free(cf->cp_nat_desc_index);
+    free(cf->cp_methodref_class_index);
+    free(cf->cp_methodref_nat_index);
+    free(cf->methods);
     free(cf);
+}
+
+const struct jmevm_method *jmevm_classfile_lookup_method(
+    const struct jmevm_classfile *cf,
+    uint16_t name_cp_index,
+    uint16_t descriptor_cp_index)
+{
+    if (cf == NULL || cf->methods == NULL || cf->methods_count == 0) {
+        return NULL;
+    }
+    for (uint16_t i = 0; i < cf->methods_count; i++) {
+        const struct jmevm_method *m = &cf->methods[i];
+        if (m->name_cp_index == name_cp_index && m->descriptor_cp_index == descriptor_cp_index) {
+            return m;
+        }
+    }
+    return NULL;
 }
 
 int jmevm_classfile_extract_main(const jmevm_classfile *cf, jmevm_main_method *out)
@@ -594,7 +679,7 @@ int jmevm_classfile_execute_main(jmevm_vm *vm, const uint8_t *buf, size_t len)
         return rc;
     }
 
-    int run_rc = jmevm_vm_run(vm, m.code, m.code_len, m.max_locals, m.max_stack);
+    int run_rc = jmevm_vm_run(vm, cf, m.code, m.code_len, m.max_locals, m.max_stack);
     jmevm_classfile_destroy(cf);
     return run_rc;
 }

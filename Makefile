@@ -1,5 +1,6 @@
 CC = gcc
 AR = ar
+JAVAC ?= javac
 CFLAGS = -std=c99 -Wall -Wextra -Iinclude -Iinternal -I.
 LDFLAGS =
 
@@ -37,7 +38,7 @@ LIB_SRC = \
 LIB_OBJS = $(patsubst %.c,$(BUILD_DIR)/%.o,$(LIB_SRC))
 MAIN_OBJ = $(BUILD_DIR)/main.o
 
-.PHONY: all clean
+.PHONY: all clean java
 
 all: $(BUILD_DIR)/libjmevm.a jmevm
 
@@ -57,3 +58,8 @@ $(MAIN_OBJ): main.c
 
 clean:
 	rm -rf $(BUILD_DIR) jmevm
+
+JAVA_SRCS := $(wildcard samples/*.java)
+
+java:
+	@$(JAVAC) -d samples $(JAVA_SRCS)

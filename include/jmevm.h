@@ -20,6 +20,7 @@ void jmevm_vm_destroy(jmevm_vm *vm);
 
 int jmevm_vm_run(
     jmevm_vm *vm,
+    const jmevm_classfile *cf,
     const uint8_t *code,
     size_t code_len,
     uint16_t max_locals,

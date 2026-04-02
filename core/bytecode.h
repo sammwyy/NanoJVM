@@ -24,6 +24,10 @@
 #define JMEVM_OP_IADD 0x60
 #define JMEVM_OP_ISUB 0x64
 
+#define JMEVM_OP_INVOKESTATIC 0xb8
+
+#define JMEVM_OP_IRETURN 0xac
+
 #define JMEVM_OP_RETURN 0xb1
 
 #endif
