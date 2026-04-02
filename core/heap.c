@@ -12,13 +12,18 @@ static int32_t field_storage[MAX_FIELDS];
 static uint16_t next_obj = 1; // 0 is reserved for null
 static uint16_t next_field = 0;
 
+static int heap_initialized = 0;
+
 void jmevm_heap_init(size_t size) {
   (void)size;
   memset(objects, 0, sizeof(objects));
   memset(field_storage, 0, sizeof(field_storage));
   next_obj = 1;
   next_field = 0;
+  heap_initialized = 1;
 }
+
+int jmevm_heap_is_initialized(void) { return heap_initialized; }
 
 int32_t jmevm_heap_alloc(const struct jmevm_classfile *cf) {
   if (next_obj >= MAX_OBJECTS) {
@@ -45,9 +50,6 @@ int32_t jmevm_heap_alloc(const struct jmevm_classfile *cf) {
 
   next_field += fields_count;
 
-  printf("[DEBUG] Allocated object #%d of class at %p (fields: %d)\n", obj_ref,
-         (void *)cf, fields_count);
-
   return obj_ref;
 }
 
@@ -66,8 +68,6 @@ int32_t jmevm_heap_alloc_array(jmevm_obj_type type, int32_t length) {
   size_t elem_size = (type == JMEVM_OBJ_ARRAY_INT) ? sizeof(int32_t) : 1;
   obj->data = calloc((size_t)length, elem_size);
 
-  printf("[DEBUG] Allocated array #%d (type %d, length %d)\n", obj_ref, type,
-         length);
   return obj_ref;
 }
 
@@ -128,7 +128,6 @@ int32_t jmevm_object_get_field(int32_t obj_ref, uint16_t field_index) {
   }
 
   int32_t val = obj->fields[field_index];
-  printf("[DEBUG] Object #%d, Get field %d -> %d\n", obj_ref, field_index, val);
   return val;
 }
 
@@ -147,8 +146,6 @@ void jmevm_object_put_field(int32_t obj_ref, uint16_t field_index,
   }
 
   obj->fields[field_index] = value;
-  printf("[DEBUG] Object #%d, Put field %d <- %d\n", obj_ref, field_index,
-         value);
 }
 
 const struct jmevm_classfile *jmevm_heap_get_classfile(int32_t obj_ref) {

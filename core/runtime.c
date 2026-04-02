@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#define JMEVM_REF_PRINTSTREAM 1
+#define JMEVM_REF_PRINTSTREAM 0x1000
 
 #define JMEVM_MAX_NATIVE_METHODS 16
 

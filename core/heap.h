@@ -30,6 +30,7 @@ typedef struct jmevm_object {
  * Initializes the heap with a fixed size.
  */
 void jmevm_heap_init(size_t size);
+int jmevm_heap_is_initialized(void);
 
 /**
  * Allocates a new object of the given class.

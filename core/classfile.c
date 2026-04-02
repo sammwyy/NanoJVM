@@ -88,8 +88,8 @@ static int cf_skip(cf_reader *r, size_t n) {
   return JMEVM_CLASSFILE_OK;
 }
 
-static int cf_utf8_equals(const struct jmevm_classfile *cf, uint16_t cp_index,
-                          const char *s) {
+int jmevm_classfile_utf8_equals(const struct jmevm_classfile *cf,
+                                uint16_t cp_index, const char *s) {
   if (cf == NULL || s == NULL) {
     return 0;
   }
@@ -609,8 +609,8 @@ jmevm_classfile *jmevm_classfile_load_from_buffer(const uint8_t *buf,
       m->descriptor_cp_index = descriptor_index;
     }
 
-    int is_main = cf_utf8_equals(cf, name_index, main_name) &&
-                  cf_utf8_equals(cf, descriptor_index, main_desc);
+    int is_main = jmevm_classfile_utf8_equals(cf, name_index, main_name) &&
+                  jmevm_classfile_utf8_equals(cf, descriptor_index, main_desc);
 
     for (uint16_t j = 0; j < attributes_count; j++) {
       uint16_t attribute_name_index = 0;
@@ -627,7 +627,8 @@ jmevm_classfile *jmevm_classfile_load_from_buffer(const uint8_t *buf,
         return NULL;
       }
 
-      if (cf_utf8_equals(cf, attribute_name_index, code_attr_name) &&
+      if (jmevm_classfile_utf8_equals(cf, attribute_name_index,
+                                      code_attr_name) &&
           m != NULL && m->code == NULL) {
         rc =
             parse_code_attribute_to_method(cf, &r, (size_t)attribute_length, m);
@@ -650,13 +651,6 @@ jmevm_classfile *jmevm_classfile_load_from_buffer(const uint8_t *buf,
         }
       }
     }
-  }
-
-  if (!cf->has_main || cf->main_code == NULL || cf->main_code_len == 0) {
-    /* Keep parsing failures silent; return NULL so callers can fail gracefully.
-     */
-    jmevm_classfile_destroy(cf);
-    return NULL;
   }
 
   return cf;
@@ -740,13 +734,29 @@ int jmevm_classfile_execute_main(jmevm_vm *vm, const uint8_t *buf, size_t len) {
   return run_rc;
 }
 
+const struct jmevm_method *
+jmevm_classfile_resolve_method(const struct jmevm_classfile *cf,
+                               const char *name, const char *descriptor) {
+  if (cf == NULL || name == NULL || descriptor == NULL)
+    return NULL;
+  for (uint16_t i = 0; i < cf->methods_count; i++) {
+    if (jmevm_classfile_utf8_equals(cf, cf->methods[i].name_cp_index, name) &&
+        jmevm_classfile_utf8_equals(cf, cf->methods[i].descriptor_cp_index,
+                                    descriptor)) {
+      return &cf->methods[i];
+    }
+  }
+  return NULL;
+}
+
 int jmevm_classfile_resolve_field(const struct jmevm_classfile *cf,
                                   const char *name, const char *descriptor) {
   if (cf == NULL || name == NULL || descriptor == NULL)
     return -1;
   for (uint16_t i = 0; i < cf->fields_count; i++) {
-    if (cf_utf8_equals(cf, cf->fields[i].name_cp_index, name) &&
-        cf_utf8_equals(cf, cf->fields[i].descriptor_cp_index, descriptor)) {
+    if (jmevm_classfile_utf8_equals(cf, cf->fields[i].name_cp_index, name) &&
+        jmevm_classfile_utf8_equals(cf, cf->fields[i].descriptor_cp_index,
+                                    descriptor)) {
       return (int)i;
     }
   }

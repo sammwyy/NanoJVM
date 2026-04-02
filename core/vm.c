@@ -11,10 +11,18 @@
 
 #define JMEVM_MAX_CALLSTACK 16
 
+#define JMEVM_MAX_CLASSES 32
+
+struct jmevm_vm;
+static const struct jmevm_classfile *jmevm_vm_find_class(struct jmevm_vm *vm,
+                                                         const char *name);
+
 struct jmevm_vm {
   const struct jmevm_classfile *cf;
   jmevm_frame frames[JMEVM_MAX_CALLSTACK];
   uint16_t frame_top; /* number of active frames */
+  const struct jmevm_classfile *classes[JMEVM_MAX_CLASSES];
+  uint16_t class_count;
 };
 
 #define JMEVM_OK 0
@@ -335,6 +343,69 @@ static int resolve_invokestatic(const struct jmevm_classfile *cf,
   return JMEVM_OK;
 }
 
+static int resolve_invokevirtual(const struct jmevm_classfile *cf,
+                                 uint16_t methodref_cp_index,
+                                 const struct jmevm_classfile *obj_cf,
+                                 const struct jmevm_method **out_method,
+                                 uint16_t *out_arg_count, int *out_ret_is_int) {
+  if (cf == NULL || out_method == NULL || out_arg_count == NULL ||
+      out_ret_is_int == NULL || obj_cf == NULL) {
+    return JMEVM_ERR_BAD_ARGS;
+  }
+  if (methodref_cp_index == 0 || methodref_cp_index >= cf->cp_count) {
+    return JMEVM_ERR_BAD_ARGS;
+  }
+
+  uint16_t nat_index = cf->cp_methodref_nat_index
+                           ? cf->cp_methodref_nat_index[methodref_cp_index]
+                           : 0;
+  if (nat_index == 0) {
+    return JMEVM_ERR_BAD_ARGS;
+  }
+
+  uint16_t method_name_cp_index =
+      cf->cp_nat_name_index ? cf->cp_nat_name_index[nat_index] : 0;
+  uint16_t desc_cp_index =
+      cf->cp_nat_desc_index ? cf->cp_nat_desc_index[nat_index] : 0;
+  if (method_name_cp_index == 0 || desc_cp_index == 0) {
+    return JMEVM_ERR_BAD_ARGS;
+  }
+
+  char *method_name = jmevm_classfile_get_utf8_copy(cf, method_name_cp_index);
+  char *method_desc = jmevm_classfile_get_utf8_copy(cf, desc_cp_index);
+
+  const struct jmevm_method *m =
+      jmevm_classfile_resolve_method(obj_cf, method_name, method_desc);
+
+  if (m == NULL || m->code == NULL) {
+    free(method_name);
+    free(method_desc);
+    return JMEVM_ERR_BAD_ARGS;
+  }
+
+  uint16_t arg_count = 0;
+  int ret_is_int = 0;
+  int rc = parse_descriptor_minimal_i32_void((const uint8_t *)method_desc,
+                                             strlen(method_desc), &arg_count,
+                                             &ret_is_int);
+
+  free(method_name);
+  free(method_desc);
+
+  if (rc != JMEVM_OK) {
+    return rc;
+  }
+
+  if (m->max_locals > JMEVM_MAX_LOCALS || m->max_stack > JMEVM_MAX_STACK) {
+    return JMEVM_ERR_BAD_ARGS;
+  }
+
+  *out_method = m;
+  *out_arg_count = arg_count;
+  *out_ret_is_int = ret_is_int;
+  return JMEVM_OK;
+}
+
 static int vm_exec(struct jmevm_vm *vm) {
   int rc;
 
@@ -348,6 +419,7 @@ static int vm_exec(struct jmevm_vm *vm) {
       return JMEVM_ERR_TRUNCATED;
     }
 
+    const struct jmevm_classfile *cf = f->cf;
     uint8_t op = f->code[f->pc++];
 
     switch (op) {
@@ -470,6 +542,20 @@ static int vm_exec(struct jmevm_vm *vm) {
       }
       break;
 
+    case JMEVM_OP_DUP: {
+      int32_t v;
+      rc = frame_pop(f, &v);
+      if (rc != JMEVM_OK)
+        return rc;
+      rc = frame_push(f, v);
+      if (rc != JMEVM_OK)
+        return rc;
+      rc = frame_push(f, v);
+      if (rc != JMEVM_OK)
+        return rc;
+      break;
+    }
+
     case JMEVM_OP_ASTORE:
     case JMEVM_OP_ISTORE: {
       if (f->pc >= f->code_len) {
@@ -572,7 +658,6 @@ static int vm_exec(struct jmevm_vm *vm) {
       }
       break;
     }
-
     case JMEVM_OP_INVOKESTATIC: {
       if (f->pc + 1 >= f->code_len) {
         return JMEVM_ERR_TRUNCATED;
@@ -585,7 +670,7 @@ static int vm_exec(struct jmevm_vm *vm) {
       uint16_t arg_count = 0;
       int ret_is_int = 0;
 
-      rc = resolve_native_from_methodref(vm->cf, methodref_cp_index, &nm,
+      rc = resolve_native_from_methodref(cf, methodref_cp_index, &nm,
                                          &arg_count, &ret_is_int);
       if (rc == JMEVM_OK && nm != NULL) {
         /* Native static method: no receiver on the operand stack. */
@@ -610,7 +695,7 @@ static int vm_exec(struct jmevm_vm *vm) {
       }
 
       const struct jmevm_method *m = NULL;
-      rc = resolve_invokestatic(vm->cf, methodref_cp_index, &m, &arg_count,
+      rc = resolve_invokestatic(cf, methodref_cp_index, &m, &arg_count,
                                 &ret_is_int);
       if (rc != JMEVM_OK) {
         return rc;
@@ -637,6 +722,8 @@ static int vm_exec(struct jmevm_vm *vm) {
         return JMEVM_ERR_BAD_ARGS;
       }
 
+      callee->cf = cf; // Static call: same class as caller for now or resolved
+                       // by Methodref
       callee->pc = 0;
       callee->code = m->code;
       callee->code_len = m->code_len;
@@ -656,15 +743,12 @@ static int vm_exec(struct jmevm_vm *vm) {
     }
 
     case JMEVM_OP_GETSTATIC: {
-      if (f->pc + 1 >= f->code_len) {
-        return JMEVM_ERR_TRUNCATED;
-      }
       uint16_t fieldref_cp_index =
           ((uint16_t)f->code[f->pc] << 8) | (uint16_t)f->code[f->pc + 1];
       f->pc += 2;
 
       /* Minimal support: only java/lang/System.out. */
-      if (is_system_out_fieldref(vm->cf, fieldref_cp_index)) {
+      if (is_system_out_fieldref(cf, fieldref_cp_index)) {
         rc = frame_push(f, jmevm_runtime_stub_system_out());
         if (rc != JMEVM_OK) {
           return rc;
@@ -674,6 +758,7 @@ static int vm_exec(struct jmevm_vm *vm) {
       return JMEVM_ERR_BAD_ARGS;
     }
 
+    case JMEVM_OP_INVOKESPECIAL:
     case JMEVM_OP_INVOKEVIRTUAL: {
       if (f->pc + 1 >= f->code_len) {
         return JMEVM_ERR_TRUNCATED;
@@ -685,15 +770,105 @@ static int vm_exec(struct jmevm_vm *vm) {
       const struct jmevm_native_method *nm = NULL;
       uint16_t arg_count = 0;
       int ret_is_int = 0;
-      rc = resolve_native_from_methodref(vm->cf, methodref_cp_index, &nm,
+
+      // Try native first
+      rc = resolve_native_from_methodref(cf, methodref_cp_index, &nm,
                                          &arg_count, &ret_is_int);
-      if (rc != JMEVM_OK || nm == NULL) {
-        return JMEVM_ERR_BAD_ARGS;
+      if (rc == JMEVM_OK && nm != NULL) {
+        /* Virtual methods: stack has receiver + descriptor params. */
+        if ((uint16_t)(arg_count + 1) > f->sp) {
+          return JMEVM_ERR_STACK_UNDERFLOW;
+        }
+
+        int32_t args[JMEVM_MAX_LOCALS];
+        for (int i = (int)arg_count - 1; i >= 0; i--) {
+          rc = frame_pop(f, &args[(size_t)i]);
+          if (rc != JMEVM_OK) {
+            return rc;
+          }
+        }
+        int32_t receiver = 0;
+        rc = frame_pop(f, &receiver);
+        if (rc != JMEVM_OK) {
+          return rc;
+        }
+
+        int32_t ret = nm->fn(vm, receiver, args, arg_count);
+        if (ret_is_int) {
+          rc = frame_push(f, ret);
+          if (rc != JMEVM_OK) {
+            return rc;
+          }
+        }
+        continue;
       }
 
-      /* Virtual methods: stack has receiver + descriptor params. */
-      if ((uint16_t)(arg_count + 1) > f->sp) {
+      // If not native, resolve as Java method
+      // We need to peek at the receiver to get its class
+      // First, get arg_count from descriptor
+      uint16_t nat_index = cf->cp_methodref_nat_index[methodref_cp_index];
+      uint16_t desc_idx = cf->cp_nat_desc_index[nat_index];
+      const uint8_t *desc_bytes = cf->buf + cf->cp_utf8_off[desc_idx];
+      size_t desc_len = (size_t)cf->cp_utf8_len[desc_idx];
+      rc = parse_descriptor_minimal_i32_void(desc_bytes, desc_len, &arg_count,
+                                             &ret_is_int);
+      if (rc != JMEVM_OK) {
+        return rc;
+      }
+
+      if (f->sp < (uint16_t)(arg_count + 1)) {
         return JMEVM_ERR_STACK_UNDERFLOW;
+      }
+
+      int32_t receiver = f->stack[f->sp - arg_count - 1];
+      if (receiver == 0) {
+        return JMEVM_ERR_BAD_ARGS; // NullPointerException
+      }
+
+      const struct jmevm_classfile *target_class = NULL;
+      uint8_t op_prev = f->code[f->pc - 3];
+
+      if (op_prev == JMEVM_OP_INVOKESPECIAL) {
+        uint16_t class_cp_idx =
+            cf->cp_methodref_class_index[methodref_cp_index];
+        uint16_t class_name_idx = cf->cp_class_name_index[class_cp_idx];
+        char *target_class_name =
+            jmevm_classfile_get_utf8_copy(cf, class_name_idx);
+        target_class = jmevm_vm_find_class(vm, target_class_name);
+        free(target_class_name);
+      } else {
+        target_class = jmevm_heap_get_classfile(receiver);
+      }
+
+      if (target_class == NULL && op_prev != JMEVM_OP_INVOKESPECIAL) {
+        // Fallback for INVOKEVIRTUAL stubs (like PrintStream)
+        target_class = cf;
+      }
+
+      const struct jmevm_method *m = NULL;
+      rc = resolve_invokevirtual(cf, methodref_cp_index, target_class, &m,
+                                 &arg_count, &ret_is_int);
+      if (rc != JMEVM_OK) {
+        // Special case: if it's <init> and not found, maybe it's
+        // java/lang/Object.<init> which we can safely ignore in this minimal
+        // VM.
+        char *mname =
+            jmevm_classfile_get_utf8_copy(cf, cf->cp_nat_name_index[nat_index]);
+        if (strcmp(mname, "<init>") == 0) {
+          free(mname);
+          // Pop args and receiver and continue
+          for (int i = 0; i < (int)arg_count + 1; i++) {
+            int32_t dummy;
+            frame_pop(f, &dummy);
+          }
+          continue;
+        }
+        free(mname);
+        return rc;
+      }
+
+      if (vm->frame_top >= JMEVM_MAX_CALLSTACK) {
+        return JMEVM_ERR_CALLSTACK_OVERFLOW;
       }
 
       int32_t args[JMEVM_MAX_LOCALS];
@@ -703,19 +878,29 @@ static int vm_exec(struct jmevm_vm *vm) {
           return rc;
         }
       }
-      int32_t receiver = 0;
-      rc = frame_pop(f, &receiver);
+      int32_t discard_receiver;
+      rc = frame_pop(f, &discard_receiver);
       if (rc != JMEVM_OK) {
         return rc;
       }
 
-      int32_t ret = nm->fn(vm, receiver, args, arg_count);
-      if (ret_is_int) {
-        rc = frame_push(f, ret);
-        if (rc != JMEVM_OK) {
-          return rc;
-        }
+      jmevm_frame *callee = &vm->frames[vm->frame_top++];
+      callee->cf = target_class;
+      callee->pc = 0;
+      callee->code = m->code;
+      callee->code_len = m->code_len;
+      callee->sp = 0;
+      callee->max_locals = m->max_locals;
+      callee->max_stack = m->max_stack;
+
+      for (uint16_t li = 0; li < callee->max_locals; li++) {
+        callee->locals[li] = 0;
       }
+      callee->locals[0] = receiver;
+      for (uint16_t li = 0; li < arg_count; li++) {
+        callee->locals[li + 1] = args[li];
+      }
+
       continue;
     }
 
@@ -759,12 +944,22 @@ static int vm_exec(struct jmevm_vm *vm) {
       }
       // uint16_t class_index = ((uint16_t)f->code[f->pc] << 8) |
       // (uint16_t)f->code[f->pc + 1];
+      uint16_t class_cp_idx =
+          ((uint16_t)f->code[f->pc] << 8) | (uint16_t)f->code[f->pc + 1];
       f->pc += 2;
 
-      // Minimal support: assume we are allocating an instance of the current
-      // class or we just use vm->cf for field metadata. In a real VM, we'd look
-      // up the class.
-      int32_t obj_ref = jmevm_heap_alloc(vm->cf);
+      const struct jmevm_classfile *target_cf = NULL;
+      uint16_t class_name_idx = cf->cp_class_name_index[class_cp_idx];
+      char *class_name = jmevm_classfile_get_utf8_copy(cf, class_name_idx);
+
+      target_cf = jmevm_vm_find_class(vm, class_name);
+      free(class_name);
+
+      if (target_cf == NULL) {
+        return JMEVM_ERR_BAD_ARGS;
+      }
+
+      int32_t obj_ref = jmevm_heap_alloc(target_cf);
       if (obj_ref == 0) {
         return JMEVM_ERR_UNKNOWN_OPCODE; // Treat as OOM or general error
       }
@@ -795,12 +990,12 @@ static int vm_exec(struct jmevm_vm *vm) {
         return JMEVM_ERR_BAD_ARGS; // NullPointerException
 
       // Resolve field name and descriptor from Fieldref in current CP
-      uint16_t nat_idx = vm->cf->cp_fieldref_nat_index[fieldref_cp_index];
-      uint16_t name_idx = vm->cf->cp_nat_name_index[nat_idx];
-      uint16_t desc_idx = vm->cf->cp_nat_desc_index[nat_idx];
+      uint16_t nat_idx = cf->cp_fieldref_nat_index[fieldref_cp_index];
+      uint16_t name_idx = cf->cp_nat_name_index[nat_idx];
+      uint16_t desc_idx = cf->cp_nat_desc_index[nat_idx];
 
-      char *name = jmevm_classfile_get_utf8_copy(vm->cf, name_idx);
-      char *desc = jmevm_classfile_get_utf8_copy(vm->cf, desc_idx);
+      char *name = jmevm_classfile_get_utf8_copy(cf, name_idx);
+      char *desc = jmevm_classfile_get_utf8_copy(cf, desc_idx);
 
       // Resolve in target's class
       const struct jmevm_classfile *target_cf =
@@ -820,14 +1015,14 @@ static int vm_exec(struct jmevm_vm *vm) {
       if (f->pc >= f->code_len)
         return JMEVM_ERR_TRUNCATED;
       uint8_t cp_idx = f->code[f->pc++];
-      uint8_t tag = vm->cf->cp_tag[cp_idx];
+      uint8_t tag = cf->cp_tag[cp_idx];
       if (tag == CONSTANT_Integer) {
-        rc = frame_push(f, vm->cf->cp_integer[cp_idx]);
+        rc = frame_push(f, cf->cp_integer[cp_idx]);
         if (rc != JMEVM_OK)
           return rc;
       } else if (tag == CONSTANT_String) {
-        uint16_t utf8_idx = vm->cf->cp_string_index[cp_idx];
-        char *s = jmevm_classfile_get_utf8_copy(vm->cf, utf8_idx);
+        uint16_t utf8_idx = cf->cp_string_index[cp_idx];
+        char *s = jmevm_classfile_get_utf8_copy(cf, utf8_idx);
         int32_t slen = (int32_t)strlen(s);
         int32_t barry_ref = jmevm_heap_alloc_array(JMEVM_OBJ_ARRAY_BYTE, slen);
         for (int32_t i = 0; i < slen; i++) {
@@ -949,12 +1144,12 @@ static int vm_exec(struct jmevm_vm *vm) {
         return JMEVM_ERR_BAD_ARGS; // NullPointerException
 
       // Resolve field name and descriptor from Fieldref in current CP
-      uint16_t nat_idx = vm->cf->cp_fieldref_nat_index[fieldref_cp_index];
-      uint16_t name_idx = vm->cf->cp_nat_name_index[nat_idx];
-      uint16_t desc_idx = vm->cf->cp_nat_desc_index[nat_idx];
+      uint16_t nat_idx = cf->cp_fieldref_nat_index[fieldref_cp_index];
+      uint16_t name_idx = cf->cp_nat_name_index[nat_idx];
+      uint16_t desc_idx = cf->cp_nat_desc_index[nat_idx];
 
-      char *name = jmevm_classfile_get_utf8_copy(vm->cf, name_idx);
-      char *desc = jmevm_classfile_get_utf8_copy(vm->cf, desc_idx);
+      char *name = jmevm_classfile_get_utf8_copy(cf, name_idx);
+      char *desc = jmevm_classfile_get_utf8_copy(cf, desc_idx);
 
       // Resolve in target's class
       const struct jmevm_classfile *target_cf =
@@ -984,7 +1179,53 @@ jmevm_vm *jmevm_vm_create(void) {
   return vm;
 }
 
-void jmevm_vm_destroy(jmevm_vm *vm) { free(vm); }
+void jmevm_vm_destroy(jmevm_vm *vm) {
+  if (vm) {
+    for (uint16_t i = 0; i < vm->class_count; i++) {
+      // Note: we don't know if VM owns these or not.
+      // Looking at execute_main, it used to destroy it.
+      // We should decide who owns classes.
+      // If main.c loads them and passes them, maybe main.c should destroy them.
+      // But wait, the user said "meter todo eso al registro de clases".
+    }
+    free(vm);
+  }
+}
+
+void jmevm_vm_register_class(jmevm_vm *vm, jmevm_classfile *cf) {
+  if (vm && cf && vm->class_count < JMEVM_MAX_CLASSES) {
+    vm->classes[vm->class_count++] = cf;
+  }
+}
+
+static const struct jmevm_classfile *jmevm_vm_find_class(jmevm_vm *vm,
+                                                         const char *name) {
+  if (vm == NULL || name == NULL) {
+    return NULL;
+  }
+  for (uint16_t i = 0; i < vm->class_count; i++) {
+    const struct jmevm_classfile *cf = vm->classes[i];
+    if (jmevm_classfile_utf8_equals(cf, cf->this_class_name_cp_index, name)) {
+      return cf;
+    }
+  }
+  return NULL;
+}
+
+int jmevm_vm_run_main(jmevm_vm *vm, const char *class_name) {
+  const struct jmevm_classfile *cf = jmevm_vm_find_class(vm, class_name);
+  if (cf == NULL) {
+    return JMEVM_ERR_BAD_ARGS;
+  }
+
+  jmevm_main_method m;
+  int rc = jmevm_classfile_extract_main(cf, &m);
+  if (rc != 0) {
+    return JMEVM_ERR_BAD_ARGS;
+  }
+
+  return jmevm_vm_run(vm, cf, m.code, m.code_len, m.max_locals, m.max_stack);
+}
 
 int jmevm_vm_run(jmevm_vm *vm, const jmevm_classfile *cf, const uint8_t *code,
                  size_t code_len, uint16_t max_locals, uint16_t max_stack) {
@@ -1002,12 +1243,15 @@ int jmevm_vm_run(jmevm_vm *vm, const jmevm_classfile *cf, const uint8_t *code,
   }
 
   jmevm_runtime_init_native();
-  jmevm_heap_init(64 * 1024);
+  if (!jmevm_heap_is_initialized()) {
+    jmevm_heap_init(64 * 1024);
+  }
 
   vm->cf = cf;
   vm->frame_top = 1;
 
   jmevm_frame *f = &vm->frames[0];
+  f->cf = cf;
   f->pc = 0;
   f->code = code;
   f->code_len = code_len;

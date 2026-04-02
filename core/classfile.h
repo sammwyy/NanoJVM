@@ -73,6 +73,13 @@ jmevm_classfile_lookup_method(const struct jmevm_classfile *cf,
                               uint16_t descriptor_cp_index);
 
 /**
+ * Resolves a method by its name and descriptor.
+ */
+const struct jmevm_method *
+jmevm_classfile_resolve_method(const struct jmevm_classfile *cf,
+                               const char *name, const char *descriptor);
+
+/**
  * Resolves a field index based on its name and descriptor.
  */
 int jmevm_classfile_resolve_field(const struct jmevm_classfile *cf,
@@ -84,5 +91,11 @@ int jmevm_classfile_resolve_field(const struct jmevm_classfile *cf,
  */
 char *jmevm_classfile_get_utf8_copy(const struct jmevm_classfile *cf,
                                     uint16_t cp_index);
+
+/**
+ * Returns 1 if the UTF-8 entry at the given index equals the given string.
+ */
+int jmevm_classfile_utf8_equals(const struct jmevm_classfile *cf,
+                                uint16_t cp_index, const char *s);
 
 #endif /* JMEVM_CORE_CLASSFILE_H */
