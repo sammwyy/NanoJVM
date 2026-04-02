@@ -10,9 +10,11 @@ struct jmevm_classfile;
  * Minimal object representation.
  */
 typedef enum {
+  JMEVM_OBJ_FREE = -1,
   JMEVM_OBJ_CLASS = 0,
   JMEVM_OBJ_ARRAY_INT,
   JMEVM_OBJ_ARRAY_BYTE,
+  JMEVM_OBJ_ARRAY_OBJ,
 } jmevm_obj_type;
 
 /**
@@ -24,6 +26,7 @@ typedef struct jmevm_object {
   int32_t *fields;
   int32_t length;
   void *data;
+  uint8_t marked;
 } jmevm_object;
 
 /**

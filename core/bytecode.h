@@ -66,4 +66,8 @@
 
 #define JMEVM_OP_ATHROW 0xbf
 
+#define JMEVM_OP_IINC 0x84
+#define JMEVM_OP_IF_ICMPGE 0xa2
+#define JMEVM_OP_GOTO 0xa7
+
 #endif

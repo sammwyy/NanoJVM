@@ -1,6 +1,7 @@
 #include "core/vm.h"
 #include "core/bytecode.h"
 #include "core/classfile.h"
+#include "core/gc.h"
 #include "core/heap.h"
 #include "core/runtime.h"
 #include "jmevm.h"
@@ -9,23 +10,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define JMEVM_MAX_CALLSTACK 16
-
-#define JMEVM_MAX_CLASSES 32
-
 struct jmevm_vm;
 static const struct jmevm_classfile *jmevm_vm_find_class(struct jmevm_vm *vm,
                                                          const char *name);
-
-struct jmevm_vm {
-  const struct jmevm_classfile *cf;
-  jmevm_frame frames[JMEVM_MAX_CALLSTACK];
-  uint16_t frame_top; /* number of active frames */
-  const struct jmevm_classfile *classes[JMEVM_MAX_CLASSES];
-  uint16_t class_count;
-
-  int32_t exception_obj; /* 0 if no exception is pending */
-};
 
 #define JMEVM_OK 0
 #define JMEVM_ERR_UNKNOWN_OPCODE -1
@@ -1088,7 +1075,11 @@ static int vm_exec(struct jmevm_vm *vm) {
 
       int32_t obj_ref = jmevm_heap_alloc(target_cf);
       if (obj_ref == 0) {
-        return JMEVM_ERR_UNKNOWN_OPCODE; // Treat as OOM or general error
+        jmevm_gc_run(vm);
+        obj_ref = jmevm_heap_alloc(target_cf);
+        if (obj_ref == 0) {
+          return JMEVM_ERR_UNKNOWN_OPCODE; // Treat as OOM or general error
+        }
       }
       rc = frame_push(f, obj_ref);
       if (rc != JMEVM_OK) {
@@ -1154,11 +1145,23 @@ static int vm_exec(struct jmevm_vm *vm) {
         char *s = jmevm_classfile_get_utf8_copy(cf, utf8_idx);
         int32_t slen = (int32_t)strlen(s);
         int32_t barry_ref = jmevm_heap_alloc_array(JMEVM_OBJ_ARRAY_BYTE, slen);
+        if (barry_ref == 0) {
+          jmevm_gc_run(vm);
+          barry_ref = jmevm_heap_alloc_array(JMEVM_OBJ_ARRAY_BYTE, slen);
+          if (barry_ref == 0)
+            return JMEVM_ERR_UNKNOWN_OPCODE;
+        }
         for (int32_t i = 0; i < slen; i++) {
           jmevm_array_store_byte(barry_ref, i, (int8_t)s[i]);
         }
         free(s);
         int32_t string_ref = jmevm_heap_alloc(NULL);
+        if (string_ref == 0) {
+          jmevm_gc_run(vm);
+          string_ref = jmevm_heap_alloc(NULL);
+          if (string_ref == 0)
+            return JMEVM_ERR_UNKNOWN_OPCODE;
+        }
         jmevm_object_put_field(string_ref, 0, barry_ref);
         jmevm_object_put_field(string_ref, 1, slen);
         rc = frame_push(f, string_ref);
@@ -1179,6 +1182,13 @@ static int vm_exec(struct jmevm_vm *vm) {
       jmevm_obj_type type =
           (atype == 10) ? JMEVM_OBJ_ARRAY_INT : JMEVM_OBJ_ARRAY_BYTE;
       int32_t array_ref = jmevm_heap_alloc_array(type, length);
+      if (array_ref == 0) {
+        jmevm_gc_run(vm);
+        array_ref = jmevm_heap_alloc_array(type, length);
+        if (array_ref == 0) {
+          return JMEVM_ERR_UNKNOWN_OPCODE;
+        }
+      }
       rc = frame_push(f, array_ref);
       if (rc != JMEVM_OK)
         return rc;
@@ -1351,7 +1361,48 @@ static int vm_exec(struct jmevm_vm *vm) {
       continue;
     }
 
+    case JMEVM_OP_IINC: {
+      if (f->pc + 1 >= f->code_len)
+        return JMEVM_ERR_TRUNCATED;
+      uint8_t idx = f->code[f->pc++];
+      int8_t val = (int8_t)f->code[f->pc++];
+      if (idx >= f->max_locals)
+        return JMEVM_ERR_LOCAL_BOUNDS;
+      f->locals[idx] += val;
+      break;
+    }
+
+    case JMEVM_OP_IF_ICMPGE: {
+      if (f->pc + 1 >= f->code_len)
+        return JMEVM_ERR_TRUNCATED;
+      int16_t offset = (int16_t)(((uint16_t)f->code[f->pc] << 8) |
+                                 (uint16_t)f->code[f->pc + 1]);
+      f->pc += 2;
+      int32_t v1, v2;
+      rc = frame_pop(f, &v2);
+      if (rc != JMEVM_OK)
+        return rc;
+      rc = frame_pop(f, &v1);
+      if (rc != JMEVM_OK)
+        return rc;
+      if (v1 >= v2) {
+        f->pc = (uint32_t)((int32_t)(f->pc - 3) + offset);
+      }
+      break;
+    }
+
+    case JMEVM_OP_GOTO: {
+      if (f->pc + 1 >= f->code_len)
+        return JMEVM_ERR_TRUNCATED;
+      int16_t offset = (int16_t)(((uint16_t)f->code[f->pc] << 8) |
+                                 (uint16_t)f->code[f->pc + 1]);
+      f->pc += 2;
+      f->pc = (uint32_t)((int32_t)(f->pc - 3) + offset);
+      break;
+    }
+
     default:
+      fprintf(stderr, "Unknown opcode: %02x\n", op);
       return JMEVM_ERR_UNKNOWN_OPCODE;
     }
   }

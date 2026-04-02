@@ -1,6 +1,6 @@
 import java.lang.*;
 
-public class Main {
+public class ExceptionTest {
   public static void main(String[] args) {
     try {
       throwException();
