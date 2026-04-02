@@ -2,7 +2,7 @@ CC = gcc
 AR = ar
 JAVAC ?= javac
 JAVAC_FLAGS = -Xlint:-options
-CFLAGS = -std=c99 -Wall -Wextra -Iinclude -Iinternal -I.
+CFLAGS = -std=c99 -Wall -Wextra -Iinclude -Iinternal -I. -D_POSIX_C_SOURCE=200809L
 LDFLAGS =
 
 BUILD_DIR = build/native
@@ -39,7 +39,7 @@ LIB_SRC = \
 LIB_OBJS = $(patsubst %.c,$(BUILD_DIR)/%.o,$(LIB_SRC))
 MAIN_OBJ = $(BUILD_DIR)/main.o
 
-.PHONY: all clean java
+.PHONY: all clean java cldc-classes
 
 all: $(BUILD_DIR)/libjmevm.a jmevm
 
