@@ -22,19 +22,7 @@ LIB_SRC = \
 	loader/stream.c \
 	cldc/lang.c \
 	cldc/util.c \
-	cldc/io.c \
-	midp/midlet.c \
-	midp/lcdui.c \
-	midp/rms.c \
-	midp/net.c \
-	m3g/scene.c \
-	m3g/math.c \
-	m3g/animation.c \
-	m3g/mesh.c \
-	m3g/render.c \
-	platform/wasm/wasm.c \
-	platform/desktop/desktop.c \
-	platform/headless/headless.c
+	cldc/io.c
 
 LIB_OBJS = $(patsubst %.c,$(BUILD_DIR)/%.o,$(LIB_SRC))
 MAIN_OBJ = $(BUILD_DIR)/main.o

@@ -1,4 +1,0 @@
-#ifndef JVM_PLATFORM_HEADLESS_H
-#define JVM_PLATFORM_HEADLESS_H
-
-#endif

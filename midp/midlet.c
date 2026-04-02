@@ -1,1 +1,0 @@
-#include "midp/midlet.h"
