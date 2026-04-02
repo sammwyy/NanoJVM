@@ -1,0 +1,4 @@
+#ifndef JMEVM_PLATFORM_HEADLESS_H
+#define JMEVM_PLATFORM_HEADLESS_H
+
+#endif

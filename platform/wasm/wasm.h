@@ -1,0 +1,4 @@
+#ifndef JMEVM_PLATFORM_WASM_H
+#define JMEVM_PLATFORM_WASM_H
+
+#endif

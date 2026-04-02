@@ -1,0 +1,29 @@
+#ifndef JMEVM_CORE_BYTECODE_H
+#define JMEVM_CORE_BYTECODE_H
+
+#define JMEVM_OP_ICONST_M1 0x02
+#define JMEVM_OP_ICONST_0 0x03
+#define JMEVM_OP_ICONST_1 0x04
+#define JMEVM_OP_ICONST_2 0x05
+#define JMEVM_OP_ICONST_3 0x06
+#define JMEVM_OP_ICONST_4 0x07
+#define JMEVM_OP_ICONST_5 0x08
+
+#define JMEVM_OP_ILOAD 0x15
+#define JMEVM_OP_ILOAD_0 0x1a
+#define JMEVM_OP_ILOAD_1 0x1b
+#define JMEVM_OP_ILOAD_2 0x1c
+#define JMEVM_OP_ILOAD_3 0x1d
+
+#define JMEVM_OP_ISTORE 0x36
+#define JMEVM_OP_ISTORE_0 0x3b
+#define JMEVM_OP_ISTORE_1 0x3c
+#define JMEVM_OP_ISTORE_2 0x3d
+#define JMEVM_OP_ISTORE_3 0x3e
+
+#define JMEVM_OP_IADD 0x60
+#define JMEVM_OP_ISUB 0x64
+
+#define JMEVM_OP_RETURN 0xb1
+
+#endif

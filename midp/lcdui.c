@@ -1,0 +1,1 @@
+#include "midp/lcdui.h"

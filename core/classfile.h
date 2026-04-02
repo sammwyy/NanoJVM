@@ -1,0 +1,4 @@
+#ifndef JMEVM_CORE_CLASSFILE_H
+#define JMEVM_CORE_CLASSFILE_H
+
+#endif

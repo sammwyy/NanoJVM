@@ -1,0 +1,4 @@
+#ifndef JMEVM_LOADER_STREAM_H
+#define JMEVM_LOADER_STREAM_H
+
+#endif

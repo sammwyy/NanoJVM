@@ -1,0 +1,4 @@
+#ifndef JMEVM_LOADER_RESOURCE_H
+#define JMEVM_LOADER_RESOURCE_H
+
+#endif

@@ -1,0 +1,4 @@
+#ifndef JMEVM_PLATFORM_DESKTOP_H
+#define JMEVM_PLATFORM_DESKTOP_H
+
+#endif

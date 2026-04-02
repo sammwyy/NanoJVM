@@ -1,0 +1,4 @@
+#ifndef JMEVM_CORE_RUNTIME_H
+#define JMEVM_CORE_RUNTIME_H
+
+#endif
