@@ -5,11 +5,12 @@
 #include <stdint.h>
 
 struct jvm_classfile;
+struct jvm_classpath;
 
 #define JVM_MAX_LOCALS 64
 #define JVM_MAX_STACK 64
 #define JVM_MAX_CALLSTACK 16
-#define JVM_MAX_CLASSES 32
+#define JVM_MAX_CLASSES 64
 
 typedef struct jvm_frame {
   const struct jvm_classfile *cf;
@@ -31,6 +32,12 @@ typedef struct jvm_vm {
   uint16_t class_count;
 
   int32_t exception_obj; /* 0 if no exception is pending */
+
+  /* Optional classpath for lazy class loading (may be NULL). */
+  struct jvm_classpath *classpath;
 } jvm_vm;
+
+/* Attach a classpath so jvm_vm_find_class can lazily load classes. */
+void jvm_vm_set_classpath(jvm_vm *vm, struct jvm_classpath *cp);
 
 #endif

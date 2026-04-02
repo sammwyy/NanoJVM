@@ -4,6 +4,7 @@
 #include "core/gc.h"
 #include "core/heap.h"
 #include "core/runtime.h"
+#include "loader/resource.h"
 #include "nanojvm.h"
 
 #include <stdio.h>
@@ -255,8 +256,10 @@ resolve_native_from_methodref(const struct jvm_classfile *cf,
   return JVM_OK;
 }
 
-static int resolve_invokestatic(const struct jvm_classfile *cf,
+static int resolve_invokestatic(struct jvm_vm *vm,
+                                const struct jvm_classfile *cf,
                                 uint16_t methodref_cp_index,
+                                const struct jvm_classfile **out_classfile,
                                 const struct jvm_method **out_method,
                                 uint16_t *out_arg_count, int *out_ret_is_int) {
   if (cf == NULL || out_method == NULL || out_arg_count == NULL ||
@@ -289,16 +292,34 @@ static int resolve_invokestatic(const struct jvm_classfile *cf,
     return JVM_ERR_BAD_ARGS;
   }
 
+  /* Determine which class owns the static method.
+   * If it is the same class as the caller, search directly.
+   * Otherwise use the VM registry for cross-class resolution. */
   uint16_t class_name_cp_index =
       cf->cp_class_name_index ? cf->cp_class_name_index[class_index] : 0;
-  if (cf->this_class_name_cp_index != 0 &&
+
+  const struct jvm_classfile *target_cf = cf; /* default: same class */
+  if (class_name_cp_index != 0 &&
       class_name_cp_index != cf->this_class_name_cp_index) {
-    /* For now, only resolve within the same class. */
-    return JVM_ERR_BAD_ARGS;
+    /* Cross-class static call: look up the target class in the VM registry. */
+    char *target_class_name =
+        jvm_classfile_get_utf8_copy(cf, class_name_cp_index);
+    if (target_class_name) {
+      const struct jvm_classfile *found =
+          jvm_vm_find_class(vm, target_class_name);
+      free(target_class_name);
+      if (found)
+        target_cf = found;
+    }
   }
 
+  char *method_name = jvm_classfile_get_utf8_copy(cf, method_name_cp_index);
+  char *method_desc = jvm_classfile_get_utf8_copy(cf, desc_cp_index);
   const struct jvm_method *m =
-      jvm_classfile_lookup_method(cf, method_name_cp_index, desc_cp_index);
+      jvm_classfile_resolve_method(target_cf, method_name, method_desc);
+  free(method_name);
+  free(method_desc);
+
   if (m == NULL || m->code == NULL) {
     return JVM_ERR_BAD_ARGS;
   }
@@ -326,6 +347,8 @@ static int resolve_invokestatic(const struct jvm_classfile *cf,
     return JVM_ERR_BAD_ARGS;
   }
 
+  if (out_classfile)
+    *out_classfile = target_cf;
   *out_method = m;
   *out_arg_count = arg_count;
   *out_ret_is_int = ret_is_int;
@@ -488,17 +511,21 @@ static int vm_handle_exception(struct jvm_vm *vm) {
     vm->frame_top--;
   }
 
-  fprintf(stderr, "Uncaught exception: %p\n", (void *)(uintptr_t)ex_obj);
+  fprintf(stderr, "Uncaught exception: 0x%x\n", (unsigned int)ex_obj);
   return -1; /* Terminate VM */
 }
 
 static void jvm_vm_throw_implicit(struct jvm_vm *vm, const char *class_name) {
   const struct jvm_classfile *ex_cf = jvm_vm_find_class(vm, class_name);
   if (ex_cf == NULL) {
-    /* If the exception class is not loaded, just use a generic error.
-     * In a real VM we'd load it. Here we assume typical classes are loaded. */
-    fprintf(stderr, "FATAL: Could not find exception class %s\n", class_name);
-    exit(1);
+    /* Exception class not loaded — allocate a sentinel object with no class.
+     * In a full VM we'd load the exception class on demand. Here we use a
+     * non-zero object reference so exception handling still fires correctly. */
+    fprintf(stderr,
+            "[implicit exception] %s (class not loaded, using sentinel)\n",
+            class_name);
+    vm->exception_obj = (int32_t)0xdeadbeef; /* sentinel non-zero value */
+    return;
   }
   vm->exception_obj = jvm_heap_alloc(ex_cf);
 }
@@ -799,9 +826,10 @@ static int vm_exec(struct jvm_vm *vm) {
         continue;
       }
 
+      const struct jvm_classfile *static_target_cf = NULL;
       const struct jvm_method *m = NULL;
-      rc = resolve_invokestatic(cf, methodref_cp_index, &m, &arg_count,
-                                &ret_is_int);
+      rc = resolve_invokestatic(vm, cf, methodref_cp_index, &static_target_cf,
+                                &m, &arg_count, &ret_is_int);
       if (rc != JVM_OK) {
         return rc;
       }
@@ -827,8 +855,7 @@ static int vm_exec(struct jvm_vm *vm) {
         return JVM_ERR_BAD_ARGS;
       }
 
-      callee->cf = cf; // Static call: same class as caller for now or resolved
-                       // by Methodref
+      callee->cf = static_target_cf ? static_target_cf : cf;
       callee->pc = 0;
       callee->code = m->code;
       callee->code_len = m->code_len;
@@ -1211,6 +1238,9 @@ static int vm_exec(struct jvm_vm *vm) {
       rc = frame_pop(f, &index);
       if (rc != JVM_OK)
         return rc;
+      rc = frame_pop(f, &array_ref);
+      if (rc != JVM_OK)
+        return rc;
       if (array_ref == 0) {
         jvm_vm_throw_implicit(vm, "java/lang/NullPointerException");
         continue;
@@ -1440,7 +1470,28 @@ static const struct jvm_classfile *jvm_vm_find_class(jvm_vm *vm,
       return cf;
     }
   }
+
+  /* Not found — try lazy loading from the attached classpath. */
+  if (vm->classpath) {
+    size_t class_len = 0;
+    uint8_t *class_buf =
+        jvm_classpath_find_class(vm->classpath, name, &class_len);
+    if (class_buf) {
+      jvm_classfile *cf = jvm_classfile_load_from_buffer(class_buf, class_len);
+      if (cf) {
+        jvm_vm_register_class(vm, cf);
+        return cf;
+      }
+      free(class_buf);
+    }
+  }
+
   return NULL;
+}
+
+void jvm_vm_set_classpath(jvm_vm *vm, struct jvm_classpath *cp) {
+  if (vm)
+    vm->classpath = cp;
 }
 
 int jvm_vm_run_main(jvm_vm *vm, const char *class_name) {

@@ -1,4 +1,4 @@
-class A {
+class InstanceA {
     int x;
 
     int add(int v) {
@@ -8,7 +8,7 @@ class A {
 
 public class InstanceTest {
     public static void main(String[] args) {
-        A a = new A();
+        InstanceA a = new InstanceA();
         a.x = 5;
         int result = a.add(3);
         System.out.println(result);

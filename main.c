@@ -1,5 +1,6 @@
 #include "core/classfile.h"
 #include "core/runtime.h"
+#include "core/vm.h"
 #include "loader/jar.h"
 #include "loader/resource.h"
 #include "nanojvm.h"
@@ -185,6 +186,9 @@ static int run_main_class(jvm_vm *vm, jvm_classpath *cp, const char *class_name,
 
   int rc =
       jvm_vm_run(vm, main_cf, m.code, m.code_len, m.max_locals, m.max_stack);
+  if (rc != 0) {
+    fprintf(stderr, "VM stopped with error code: %d\n", rc);
+  }
   return (rc == 0) ? 0 : 1;
 }
 
@@ -290,6 +294,8 @@ int main(int argc, char **argv) {
     jvm_classpath_destroy(cp);
     return 1;
   }
+  /* Attach classpath so jvm_vm_find_class can lazily load referenced classes */
+  jvm_vm_set_classpath(vm, cp);
 
   /* -----------------------------------------------------------------------
    * -jar mode: load JAR, get Main-Class from manifest
