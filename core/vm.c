@@ -1,10 +1,12 @@
 #include "core/vm.h"
 #include "core/classfile.h"
 #include "core/bytecode.h"
+#include "core/runtime.h"
 #include "jmevm.h"
 
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 
 #define JMEVM_MAX_CALLSTACK 16
 
@@ -45,6 +47,8 @@ static int frame_pop(jmevm_frame *f, int32_t *out)
 /* Constant-pool tags used by invokestatic resolution. */
 #define CONSTANT_Methodref 10
 #define CONSTANT_InterfaceMethodref 11
+#define CONSTANT_Fieldref 9
+#define CONSTANT_Utf8 1
 
 static int parse_descriptor_minimal_i32_void(
     const uint8_t *desc,
@@ -92,6 +96,141 @@ static int parse_descriptor_minimal_i32_void(
     }
 
     *out_param_count = param_count;
+    return JMEVM_OK;
+}
+
+static int is_system_out_fieldref(
+    const struct jmevm_classfile *cf,
+    uint16_t fieldref_cp_index)
+{
+    if (cf == NULL || fieldref_cp_index == 0 || fieldref_cp_index >= cf->cp_count) {
+        return 0;
+    }
+    if (cf->cp_tag == NULL || cf->cp_fieldref_class_index == NULL || cf->cp_fieldref_nat_index == NULL) {
+        return 0;
+    }
+    if (cf->cp_tag[fieldref_cp_index] != CONSTANT_Fieldref) {
+        return 0;
+    }
+
+    uint16_t class_index = cf->cp_fieldref_class_index[fieldref_cp_index];
+    uint16_t nat_index = cf->cp_fieldref_nat_index[fieldref_cp_index];
+    if (class_index == 0 || nat_index == 0) {
+        return 0;
+    }
+
+    uint16_t class_name_cp_index = cf->cp_class_name_index ? cf->cp_class_name_index[class_index] : 0;
+    uint16_t field_name_cp_index = cf->cp_nat_name_index ? cf->cp_nat_name_index[nat_index] : 0;
+    uint16_t field_desc_cp_index = cf->cp_nat_desc_index ? cf->cp_nat_desc_index[nat_index] : 0;
+    if (class_name_cp_index == 0 || field_name_cp_index == 0 || field_desc_cp_index == 0) {
+        return 0;
+    }
+    if (cf->cp_utf8_off == NULL || cf->cp_utf8_len == NULL || cf->buf == NULL) {
+        return 0;
+    }
+
+    const char sys_class[] = "java/lang/System";
+    const char out_name[] = "out";
+    const char out_desc[] = "Ljava/io/PrintStream;";
+
+    if (cf->cp_tag[class_name_cp_index] != CONSTANT_Utf8 ||
+        cf->cp_tag[field_name_cp_index] != CONSTANT_Utf8 ||
+        cf->cp_tag[field_desc_cp_index] != CONSTANT_Utf8) {
+        return 0;
+    }
+
+    const uint8_t *class_bytes = cf->buf + cf->cp_utf8_off[class_name_cp_index];
+    size_t class_len = (size_t)cf->cp_utf8_len[class_name_cp_index];
+    const uint8_t *name_bytes = cf->buf + cf->cp_utf8_off[field_name_cp_index];
+    size_t name_len = (size_t)cf->cp_utf8_len[field_name_cp_index];
+    const uint8_t *desc_bytes = cf->buf + cf->cp_utf8_off[field_desc_cp_index];
+    size_t desc_len = (size_t)cf->cp_utf8_len[field_desc_cp_index];
+
+    if (class_len != strlen(sys_class) || memcmp(class_bytes, sys_class, class_len) != 0) {
+        return 0;
+    }
+    if (name_len != strlen(out_name) || memcmp(name_bytes, out_name, name_len) != 0) {
+        return 0;
+    }
+    if (desc_len != strlen(out_desc) || memcmp(desc_bytes, out_desc, desc_len) != 0) {
+        return 0;
+    }
+    return 1;
+}
+
+static int resolve_native_from_methodref(
+    const struct jmevm_classfile *cf,
+    uint16_t methodref_cp_index,
+    const struct jmevm_native_method **out_native,
+    uint16_t *out_arg_count,
+    int *out_ret_is_int)
+{
+    if (cf == NULL || out_native == NULL || out_arg_count == NULL || out_ret_is_int == NULL) {
+        return JMEVM_ERR_BAD_ARGS;
+    }
+    *out_native = NULL;
+    *out_arg_count = 0;
+    *out_ret_is_int = 0;
+
+    if (methodref_cp_index == 0 || methodref_cp_index >= cf->cp_count) {
+        return JMEVM_ERR_BAD_ARGS;
+    }
+    if (cf->cp_tag == NULL || cf->cp_methodref_class_index == NULL || cf->cp_methodref_nat_index == NULL) {
+        return JMEVM_ERR_BAD_ARGS;
+    }
+
+    uint8_t tag = cf->cp_tag[methodref_cp_index];
+    if (tag != CONSTANT_Methodref && tag != CONSTANT_InterfaceMethodref) {
+        return JMEVM_ERR_BAD_ARGS;
+    }
+
+    uint16_t class_index = cf->cp_methodref_class_index ? cf->cp_methodref_class_index[methodref_cp_index] : 0;
+    uint16_t nat_index = cf->cp_methodref_nat_index ? cf->cp_methodref_nat_index[methodref_cp_index] : 0;
+    if (class_index == 0 || nat_index == 0) {
+        return JMEVM_ERR_BAD_ARGS;
+    }
+
+    uint16_t class_name_cp_index = cf->cp_class_name_index ? cf->cp_class_name_index[class_index] : 0;
+    uint16_t method_name_cp_index = cf->cp_nat_name_index ? cf->cp_nat_name_index[nat_index] : 0;
+    uint16_t desc_cp_index = cf->cp_nat_desc_index ? cf->cp_nat_desc_index[nat_index] : 0;
+    if (class_name_cp_index == 0 || method_name_cp_index == 0 || desc_cp_index == 0) {
+        return JMEVM_ERR_BAD_ARGS;
+    }
+
+    if (cf->cp_tag[class_name_cp_index] != CONSTANT_Utf8 ||
+        cf->cp_tag[method_name_cp_index] != CONSTANT_Utf8 ||
+        cf->cp_tag[desc_cp_index] != CONSTANT_Utf8) {
+        return JMEVM_ERR_BAD_ARGS;
+    }
+    if (cf->cp_utf8_off == NULL || cf->cp_utf8_len == NULL || cf->buf == NULL) {
+        return JMEVM_ERR_BAD_ARGS;
+    }
+
+    const uint8_t *class_bytes = cf->buf + cf->cp_utf8_off[class_name_cp_index];
+    size_t class_len = (size_t)cf->cp_utf8_len[class_name_cp_index];
+    const uint8_t *method_bytes = cf->buf + cf->cp_utf8_off[method_name_cp_index];
+    size_t method_len = (size_t)cf->cp_utf8_len[method_name_cp_index];
+    const uint8_t *desc_bytes = cf->buf + cf->cp_utf8_off[desc_cp_index];
+    size_t desc_len = (size_t)cf->cp_utf8_len[desc_cp_index];
+
+    const struct jmevm_native_method *nm = jmevm_native_lookup_utf8(
+        class_bytes, class_len,
+        method_bytes, method_len,
+        desc_bytes, desc_len);
+    if (nm == NULL) {
+        return JMEVM_ERR_BAD_ARGS;
+    }
+
+    uint16_t arg_count = 0;
+    int ret_is_int = 0;
+    int rc = parse_descriptor_minimal_i32_void(desc_bytes, desc_len, &arg_count, &ret_is_int);
+    if (rc != JMEVM_OK) {
+        return rc;
+    }
+
+    *out_native = nm;
+    *out_arg_count = arg_count;
+    *out_ret_is_int = ret_is_int;
     return JMEVM_OK;
 }
 
@@ -379,9 +518,34 @@ static int vm_exec(struct jmevm_vm *vm)
             uint16_t methodref_cp_index = ((uint16_t)f->code[f->pc] << 8) | (uint16_t)f->code[f->pc + 1];
             f->pc += 2;
 
-            const struct jmevm_method *m = NULL;
+            const struct jmevm_native_method *nm = NULL;
             uint16_t arg_count = 0;
             int ret_is_int = 0;
+
+            rc = resolve_native_from_methodref(vm->cf, methodref_cp_index, &nm, &arg_count, &ret_is_int);
+            if (rc == JMEVM_OK && nm != NULL) {
+                /* Native static method: no receiver on the operand stack. */
+                if (arg_count > f->sp) {
+                    return JMEVM_ERR_STACK_UNDERFLOW;
+                }
+                int32_t args[JMEVM_MAX_LOCALS];
+                for (int i = (int)arg_count - 1; i >= 0; i--) {
+                    rc = frame_pop(f, &args[(size_t)i]);
+                    if (rc != JMEVM_OK) {
+                        return rc;
+                    }
+                }
+                int32_t ret = nm->fn(vm, 0, args, arg_count);
+                if (ret_is_int) {
+                    rc = frame_push(f, ret);
+                    if (rc != JMEVM_OK) {
+                        return rc;
+                    }
+                }
+                continue;
+            }
+
+            const struct jmevm_method *m = NULL;
             rc = resolve_invokestatic(vm->cf, methodref_cp_index, &m, &arg_count, &ret_is_int);
             if (rc != JMEVM_OK) {
                 return rc;
@@ -423,6 +587,67 @@ static int vm_exec(struct jmevm_vm *vm)
             }
 
             /* Execute callee next. */
+            continue;
+        }
+
+        case JMEVM_OP_GETSTATIC: {
+            if (f->pc + 1 >= f->code_len) {
+                return JMEVM_ERR_TRUNCATED;
+            }
+            uint16_t fieldref_cp_index = ((uint16_t)f->code[f->pc] << 8) | (uint16_t)f->code[f->pc + 1];
+            f->pc += 2;
+
+            /* Minimal support: only java/lang/System.out. */
+            if (is_system_out_fieldref(vm->cf, fieldref_cp_index)) {
+                rc = frame_push(f, jmevm_runtime_stub_system_out());
+                if (rc != JMEVM_OK) {
+                    return rc;
+                }
+                continue;
+            }
+            return JMEVM_ERR_BAD_ARGS;
+        }
+
+        case JMEVM_OP_INVOKEVIRTUAL: {
+            if (f->pc + 1 >= f->code_len) {
+                return JMEVM_ERR_TRUNCATED;
+            }
+            uint16_t methodref_cp_index = ((uint16_t)f->code[f->pc] << 8) | (uint16_t)f->code[f->pc + 1];
+            f->pc += 2;
+
+            const struct jmevm_native_method *nm = NULL;
+            uint16_t arg_count = 0;
+            int ret_is_int = 0;
+            rc = resolve_native_from_methodref(vm->cf, methodref_cp_index, &nm, &arg_count, &ret_is_int);
+            if (rc != JMEVM_OK || nm == NULL) {
+                return JMEVM_ERR_BAD_ARGS;
+            }
+
+            /* Virtual methods: stack has receiver + descriptor params. */
+            if ((uint16_t)(arg_count + 1) > f->sp) {
+                return JMEVM_ERR_STACK_UNDERFLOW;
+            }
+
+            int32_t args[JMEVM_MAX_LOCALS];
+            for (int i = (int)arg_count - 1; i >= 0; i--) {
+                rc = frame_pop(f, &args[(size_t)i]);
+                if (rc != JMEVM_OK) {
+                    return rc;
+                }
+            }
+            int32_t receiver = 0;
+            rc = frame_pop(f, &receiver);
+            if (rc != JMEVM_OK) {
+                return rc;
+            }
+
+            int32_t ret = nm->fn(vm, receiver, args, arg_count);
+            if (ret_is_int) {
+                rc = frame_push(f, ret);
+                if (rc != JMEVM_OK) {
+                    return rc;
+                }
+            }
             continue;
         }
 
@@ -497,6 +722,8 @@ int jmevm_vm_run(
     if (max_stack == 0 || max_stack > JMEVM_MAX_STACK) {
         return JMEVM_ERR_BAD_ARGS;
     }
+
+    jmevm_runtime_init_native();
 
     vm->cf = cf;
     vm->frame_top = 1;

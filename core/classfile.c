@@ -275,10 +275,13 @@ jmevm_classfile *jmevm_classfile_load_from_buffer(const uint8_t *buf, size_t len
     cf->cp_nat_desc_index = (uint16_t *)calloc(cp_count, sizeof(uint16_t));
     cf->cp_methodref_class_index = (uint16_t *)calloc(cp_count, sizeof(uint16_t));
     cf->cp_methodref_nat_index = (uint16_t *)calloc(cp_count, sizeof(uint16_t));
+    cf->cp_fieldref_class_index = (uint16_t *)calloc(cp_count, sizeof(uint16_t));
+    cf->cp_fieldref_nat_index = (uint16_t *)calloc(cp_count, sizeof(uint16_t));
     if (cf->cp_tag == NULL || cf->cp_utf8_off == NULL || cf->cp_utf8_len == NULL ||
         cf->cp_class_name_index == NULL || cf->cp_nat_name_index == NULL ||
         cf->cp_nat_desc_index == NULL || cf->cp_methodref_class_index == NULL ||
-        cf->cp_methodref_nat_index == NULL) {
+        cf->cp_methodref_nat_index == NULL || cf->cp_fieldref_class_index == NULL ||
+        cf->cp_fieldref_nat_index == NULL) {
         jmevm_classfile_destroy(cf);
         return NULL;
     }
@@ -345,7 +348,7 @@ jmevm_classfile *jmevm_classfile_load_from_buffer(const uint8_t *buf, size_t len
 
         case CONSTANT_Methodref:
         case CONSTANT_InterfaceMethodref:
-        case CONSTANT_Fieldref: {
+            {
             /* u2 class_index, u2 name_and_type_index */
             uint16_t class_index = 0;
             uint16_t nat_index = 0;
@@ -361,6 +364,24 @@ jmevm_classfile *jmevm_classfile_load_from_buffer(const uint8_t *buf, size_t len
             }
             cf->cp_methodref_class_index[i] = class_index;
             cf->cp_methodref_nat_index[i] = nat_index;
+            break;
+        }
+        case CONSTANT_Fieldref: {
+            /* u2 class_index, u2 name_and_type_index */
+            uint16_t class_index = 0;
+            uint16_t nat_index = 0;
+            rc = cf_read_u2(&r, &class_index);
+            if (rc != JMEVM_CLASSFILE_OK) {
+                jmevm_classfile_destroy(cf);
+                return NULL;
+            }
+            rc = cf_read_u2(&r, &nat_index);
+            if (rc != JMEVM_CLASSFILE_OK) {
+                jmevm_classfile_destroy(cf);
+                return NULL;
+            }
+            cf->cp_fieldref_class_index[i] = class_index;
+            cf->cp_fieldref_nat_index[i] = nat_index;
             break;
         }
         case CONSTANT_Dynamic:
@@ -624,6 +645,8 @@ void jmevm_classfile_destroy(jmevm_classfile *cf)
     free(cf->cp_nat_desc_index);
     free(cf->cp_methodref_class_index);
     free(cf->cp_methodref_nat_index);
+    free(cf->cp_fieldref_class_index);
+    free(cf->cp_fieldref_nat_index);
     free(cf->methods);
     free(cf);
 }
