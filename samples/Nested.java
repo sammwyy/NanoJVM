@@ -9,6 +9,6 @@ public class Nested {
 
   public static void main(String[] args) {
     int result = addWrap(2, 3);
+    System.out.println(result);
   }
 }
-

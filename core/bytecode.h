@@ -32,5 +32,8 @@
 #define JMEVM_OP_IRETURN 0xac
 
 #define JMEVM_OP_RETURN 0xb1
+#define JMEVM_OP_NEW 0xbb
+#define JMEVM_OP_GETFIELD 0xb4
+#define JMEVM_OP_PUTFIELD 0xb5
 
 #endif

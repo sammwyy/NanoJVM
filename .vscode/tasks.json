@@ -1,0 +1,35 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build JMEVM",
+            "type": "shell",
+            "command": "make jmevm",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": [
+                "$gcc"
+            ]
+        },
+        {
+            "label": "Compile Samples",
+            "type": "shell",
+            "command": "javac -d samples samples/*.java",
+            "group": "build",
+            "problemMatcher": []
+        },
+        {
+            "label": "Run jmevm",
+            "type": "shell",
+            "command": "./jmevm samples/${fileBasenameNoExtension}.class",
+            "group": "test",
+            "dependsOn": [
+                "Build JMEVM",
+                "Compile Samples"
+            ],
+            "problemMatcher": []
+        }
+    ]
+}
