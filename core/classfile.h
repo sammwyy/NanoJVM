@@ -12,6 +12,13 @@
  *   name: "main"
  *   descriptor: "([Ljava/lang/String;)V"
  */
+struct jmevm_exception_handler {
+  uint16_t start_pc;
+  uint16_t end_pc;
+  uint16_t handler_pc;
+  uint16_t catch_type; /* 0 for any exception, else constant-pool index */
+};
+
 struct jmevm_method {
   uint16_t name_cp_index;       /* CONSTANT_Utf8 */
   uint16_t descriptor_cp_index; /* CONSTANT_Utf8 */
@@ -20,6 +27,9 @@ struct jmevm_method {
   size_t code_len;
   uint16_t max_stack;
   uint16_t max_locals;
+
+  uint16_t exception_table_length;
+  struct jmevm_exception_handler *exception_table;
 };
 
 struct jmevm_field {
@@ -52,6 +62,8 @@ struct jmevm_classfile {
 
   uint16_t
       this_class_name_cp_index; /* CONSTANT_Utf8 index for this class, or 0 */
+  uint16_t
+      super_class_name_cp_index; /* CONSTANT_Utf8 index for super class, or 0 */
 
   int has_main;
   const uint8_t *main_code;

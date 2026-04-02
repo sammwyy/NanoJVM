@@ -23,6 +23,8 @@ struct jmevm_vm {
   uint16_t frame_top; /* number of active frames */
   const struct jmevm_classfile *classes[JMEVM_MAX_CLASSES];
   uint16_t class_count;
+
+  int32_t exception_obj; /* 0 if no exception is pending */
 };
 
 #define JMEVM_OK 0
@@ -406,12 +408,131 @@ static int resolve_invokevirtual(const struct jmevm_classfile *cf,
   return JMEVM_OK;
 }
 
+static int class_is_assignable_to(struct jmevm_vm *vm,
+                                  const struct jmevm_classfile *child,
+                                  const char *parent_name) {
+  while (child != NULL) {
+    if (jmevm_classfile_utf8_equals(child, child->this_class_name_cp_index,
+                                    parent_name)) {
+      return 1;
+    }
+    if (child->super_class_name_cp_index == 0)
+      break;
+    char *super_name =
+        jmevm_classfile_get_utf8_copy(child, child->super_class_name_cp_index);
+    const struct jmevm_classfile *super_cf =
+        jmevm_vm_find_class(vm, super_name);
+    free(super_name);
+    child = super_cf;
+  }
+  return 0;
+}
+
+static int vm_handle_exception(struct jmevm_vm *vm) {
+  if (vm->exception_obj == 0) {
+    return JMEVM_OK;
+  }
+
+  int32_t ex_obj = vm->exception_obj;
+  const struct jmevm_classfile *ex_cf = jmevm_heap_get_classfile(ex_obj);
+  if (ex_cf == NULL) {
+    return JMEVM_ERR_BAD_ARGS;
+  }
+
+  while (vm->frame_top > 0) {
+    jmevm_frame *f = &vm->frames[vm->frame_top - 1];
+    const struct jmevm_classfile *cf = f->cf;
+
+    /* Find the method that this frame belongs to.
+     * In this minimal VM, frames don't store the method pointer directly,
+     * but we can find it by matching the code pointer. */
+    const struct jmevm_method *m = NULL;
+    for (uint16_t i = 0; i < cf->methods_count; i++) {
+      if (cf->methods[i].code == f->code) {
+        m = &cf->methods[i];
+        break;
+      }
+    }
+
+    if (m != NULL) {
+      for (uint16_t i = 0; i < m->exception_table_length; i++) {
+        struct jmevm_exception_handler *h = &m->exception_table[i];
+        /* PC is the offset of the NEXT instruction, but h->end_pc is exclusive.
+         * The instruction that threw the exception is at f->pc - 1.
+         * HOWEVER, for implicit exceptions or calls, f->pc might already point
+         * to the next instruction.
+         * JVM spec says: start_pc <= pc < end_pc.
+         * Let's use f->pc - 1 for the check if it was an instruction throw.
+         * Actually, let's just use the current f->pc value adjusted by the
+         * opcode length if needed. Or more simply, since we just incremented
+         * f->pc, the throwing instruction was at f->pc - 1 (for 1-byte
+         * opcodes). For calls, f->pc points to the instruction AFTER the
+         * invoke. */
+        uint32_t throwing_pc = f->pc - 1;
+
+        if (throwing_pc >= h->start_pc && throwing_pc < h->end_pc) {
+          int match = 0;
+          if (h->catch_type == 0) {
+            match = 1;
+          } else {
+            /* Match by exact class name. */
+            uint16_t class_entry = h->catch_type;
+            uint16_t catch_name_idx = cf->cp_class_name_index[class_entry];
+            char *catch_name =
+                jmevm_classfile_get_utf8_copy(cf, catch_name_idx);
+            if (catch_name) {
+              if (class_is_assignable_to(vm, ex_cf, catch_name)) {
+                match = 1;
+              }
+              free(catch_name);
+            }
+          }
+
+          if (match) {
+            f->pc = h->handler_pc;
+            f->sp = 0;
+            frame_push(f, ex_obj);
+            vm->exception_obj = 0;
+            return JMEVM_OK;
+          }
+        }
+      }
+    }
+
+    /* Not found in this frame, unwind. */
+    vm->frame_top--;
+  }
+
+  fprintf(stderr, "Uncaught exception: %p\n", (void *)(uintptr_t)ex_obj);
+  return -1; /* Terminate VM */
+}
+
+static void jmevm_vm_throw_implicit(struct jmevm_vm *vm,
+                                    const char *class_name) {
+  const struct jmevm_classfile *ex_cf = jmevm_vm_find_class(vm, class_name);
+  if (ex_cf == NULL) {
+    /* If the exception class is not loaded, just use a generic error.
+     * In a real VM we'd load it. Here we assume typical classes are loaded. */
+    fprintf(stderr, "FATAL: Could not find exception class %s\n", class_name);
+    exit(1);
+  }
+  vm->exception_obj = jmevm_heap_alloc(ex_cf);
+}
+
 static int vm_exec(struct jmevm_vm *vm) {
   int rc;
 
   for (;;) {
     if (vm->frame_top == 0) {
       return JMEVM_OK;
+    }
+
+    if (vm->exception_obj != 0) {
+      rc = vm_handle_exception(vm);
+      if (rc != JMEVM_OK) {
+        return rc;
+      }
+      continue;
     }
 
     jmevm_frame *f = &vm->frames[vm->frame_top - 1];
@@ -793,6 +914,11 @@ static int vm_exec(struct jmevm_vm *vm) {
           return rc;
         }
 
+        if (receiver == 0) {
+          jmevm_vm_throw_implicit(vm, "java/lang/NullPointerException");
+          continue;
+        }
+
         int32_t ret = nm->fn(vm, receiver, args, arg_count);
         if (ret_is_int) {
           rc = frame_push(f, ret);
@@ -822,7 +948,8 @@ static int vm_exec(struct jmevm_vm *vm) {
 
       int32_t receiver = f->stack[f->sp - arg_count - 1];
       if (receiver == 0) {
-        return JMEVM_ERR_BAD_ARGS; // NullPointerException
+        jmevm_vm_throw_implicit(vm, "java/lang/NullPointerException");
+        continue;
       }
 
       const struct jmevm_classfile *target_class = NULL;
@@ -986,8 +1113,10 @@ static int vm_exec(struct jmevm_vm *vm) {
       if (rc != JMEVM_OK)
         return rc;
 
-      if (obj_ref == 0)
-        return JMEVM_ERR_BAD_ARGS; // NullPointerException
+      if (obj_ref == 0) {
+        jmevm_vm_throw_implicit(vm, "java/lang/NullPointerException");
+        continue;
+      }
 
       // Resolve field name and descriptor from Fieldref in current CP
       uint16_t nat_idx = cf->cp_fieldref_nat_index[fieldref_cp_index];
@@ -1061,8 +1190,10 @@ static int vm_exec(struct jmevm_vm *vm) {
       rc = frame_pop(f, &array_ref);
       if (rc != JMEVM_OK)
         return rc;
-      if (array_ref == 0)
-        return JMEVM_ERR_BAD_ARGS;
+      if (array_ref == 0) {
+        jmevm_vm_throw_implicit(vm, "java/lang/NullPointerException");
+        continue;
+      }
       rc = frame_push(f, jmevm_array_length(array_ref));
       if (rc != JMEVM_OK)
         return rc;
@@ -1074,9 +1205,15 @@ static int vm_exec(struct jmevm_vm *vm) {
       rc = frame_pop(f, &index);
       if (rc != JMEVM_OK)
         return rc;
-      rc = frame_pop(f, &array_ref);
-      if (rc != JMEVM_OK)
-        return rc;
+      if (array_ref == 0) {
+        jmevm_vm_throw_implicit(vm, "java/lang/NullPointerException");
+        continue;
+      }
+      int32_t len = jmevm_array_length(array_ref);
+      if (index < 0 || index >= len) {
+        jmevm_vm_throw_implicit(vm, "java/lang/ArrayIndexOutOfBoundsException");
+        continue;
+      }
       rc = frame_push(f, jmevm_array_load_int(array_ref, index));
       if (rc != JMEVM_OK)
         return rc;
@@ -1094,6 +1231,16 @@ static int vm_exec(struct jmevm_vm *vm) {
       rc = frame_pop(f, &array_ref);
       if (rc != JMEVM_OK)
         return rc;
+
+      if (array_ref == 0) {
+        jmevm_vm_throw_implicit(vm, "java/lang/NullPointerException");
+        continue;
+      }
+      int32_t len = jmevm_array_length(array_ref);
+      if (index < 0 || index >= len) {
+        jmevm_vm_throw_implicit(vm, "java/lang/ArrayIndexOutOfBoundsException");
+        continue;
+      }
       jmevm_array_store_int(array_ref, index, value);
       break;
     }
@@ -1106,6 +1253,16 @@ static int vm_exec(struct jmevm_vm *vm) {
       rc = frame_pop(f, &array_ref);
       if (rc != JMEVM_OK)
         return rc;
+
+      if (array_ref == 0) {
+        jmevm_vm_throw_implicit(vm, "java/lang/NullPointerException");
+        continue;
+      }
+      int32_t len = jmevm_array_length(array_ref);
+      if (index < 0 || index >= len) {
+        jmevm_vm_throw_implicit(vm, "java/lang/ArrayIndexOutOfBoundsException");
+        continue;
+      }
       rc = frame_push(f, (int32_t)jmevm_array_load_byte(array_ref, index));
       if (rc != JMEVM_OK)
         return rc;
@@ -1123,6 +1280,16 @@ static int vm_exec(struct jmevm_vm *vm) {
       rc = frame_pop(f, &array_ref);
       if (rc != JMEVM_OK)
         return rc;
+
+      if (array_ref == 0) {
+        jmevm_vm_throw_implicit(vm, "java/lang/NullPointerException");
+        continue;
+      }
+      int32_t len = jmevm_array_length(array_ref);
+      if (index < 0 || index >= len) {
+        jmevm_vm_throw_implicit(vm, "java/lang/ArrayIndexOutOfBoundsException");
+        continue;
+      }
       jmevm_array_store_byte(array_ref, index, (int8_t)value);
       break;
     }
@@ -1140,8 +1307,10 @@ static int vm_exec(struct jmevm_vm *vm) {
       if (rc != JMEVM_OK)
         return rc;
 
-      if (obj_ref == 0)
-        return JMEVM_ERR_BAD_ARGS; // NullPointerException
+      if (obj_ref == 0) {
+        jmevm_vm_throw_implicit(vm, "java/lang/NullPointerException");
+        continue;
+      }
 
       // Resolve field name and descriptor from Fieldref in current CP
       uint16_t nat_idx = cf->cp_fieldref_nat_index[fieldref_cp_index];
@@ -1166,6 +1335,20 @@ static int vm_exec(struct jmevm_vm *vm) {
       if (rc != JMEVM_OK)
         return rc;
       break;
+    }
+
+    case JMEVM_OP_ATHROW: {
+      int32_t ex_obj;
+      rc = frame_pop(f, &ex_obj);
+      if (rc != JMEVM_OK)
+        return rc;
+
+      if (ex_obj == 0) {
+        jmevm_vm_throw_implicit(vm, "java/lang/NullPointerException");
+      } else {
+        vm->exception_obj = ex_obj;
+      }
+      continue;
     }
 
     default:

@@ -166,10 +166,28 @@ static int parse_code_attribute_to_method(struct jmevm_classfile *cf,
     return rc;
   }
 
-  size_t ex_skip = (size_t)exception_table_length * 8u;
-  rc = cf_skip(&sub, ex_skip);
-  if (rc != JMEVM_CLASSFILE_OK) {
-    return rc;
+  m->exception_table_length = exception_table_length;
+  if (exception_table_length > 0) {
+    m->exception_table = (struct jmevm_exception_handler *)calloc(
+        exception_table_length, sizeof(struct jmevm_exception_handler));
+    if (m->exception_table == NULL) {
+      return JMEVM_CLASSFILE_ERR_NOMEM;
+    }
+
+    for (uint16_t i = 0; i < exception_table_length; i++) {
+      rc = cf_read_u2(&sub, &m->exception_table[i].start_pc);
+      if (rc != JMEVM_CLASSFILE_OK)
+        return rc;
+      rc = cf_read_u2(&sub, &m->exception_table[i].end_pc);
+      if (rc != JMEVM_CLASSFILE_OK)
+        return rc;
+      rc = cf_read_u2(&sub, &m->exception_table[i].handler_pc);
+      if (rc != JMEVM_CLASSFILE_OK)
+        return rc;
+      rc = cf_read_u2(&sub, &m->exception_table[i].catch_type);
+      if (rc != JMEVM_CLASSFILE_OK)
+        return rc;
+    }
   }
 
   uint16_t attributes_count = 0;
@@ -467,13 +485,16 @@ jmevm_classfile *jmevm_classfile_load_from_buffer(const uint8_t *buf,
     jmevm_classfile_destroy(cf);
     return NULL;
   }
-  rc = cf_skip(&r, 2);
+  uint16_t super_class_index = 0;
+  rc = cf_read_u2(&r, &super_class_index);
   if (rc != JMEVM_CLASSFILE_OK) {
     jmevm_classfile_destroy(cf);
     return NULL;
   }
   cf->this_class_name_cp_index =
       this_class_index ? cf->cp_class_name_index[this_class_index] : 0;
+  cf->super_class_name_cp_index =
+      super_class_index ? cf->cp_class_name_index[super_class_index] : 0;
 
   /* interfaces */
   uint16_t interfaces_count = 0;
@@ -674,7 +695,12 @@ void jmevm_classfile_destroy(jmevm_classfile *cf) {
   free(cf->cp_string_index);
   free(cf->cp_integer);
   free(cf->fields);
-  free(cf->methods);
+  if (cf->methods) {
+    for (uint16_t i = 0; i < cf->methods_count; i++) {
+      free(cf->methods[i].exception_table);
+    }
+    free(cf->methods);
+  }
   free(cf);
 }
 

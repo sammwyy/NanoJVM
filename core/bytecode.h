@@ -64,4 +64,6 @@
 
 #define JMEVM_OP_NEWARRAY 0xbc
 
+#define JMEVM_OP_ATHROW 0xbf
+
 #endif

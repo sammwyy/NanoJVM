@@ -1,6 +1,7 @@
 CC = gcc
 AR = ar
 JAVAC ?= javac
+JAVAC_FLAGS = -Xlint:-options
 CFLAGS = -std=c99 -Wall -Wextra -Iinclude -Iinternal -I.
 LDFLAGS =
 
@@ -59,7 +60,20 @@ $(MAIN_OBJ): main.c
 clean:
 	rm -rf $(BUILD_DIR) jmevm
 
-JAVA_SRCS := $(wildcard samples/*.java)
+JAVA_SRCS := $(shell find samples -name "*.java" -not -path "samples/build/*")
 
 java:
-	@$(JAVAC) -d samples $(JAVA_SRCS)
+	@for f in $(JAVA_SRCS); do \
+		dir=$$(dirname $$f); \
+		pkg=$$(grep "package " $$f | head -1 | sed 's/package \(.*\);/\1/' | tr '.' '/'); \
+		if [ -n "$$pkg" ]; then \
+			root=$$(echo $$dir | sed "s|/$$pkg||"); \
+			flags="$(JAVAC_FLAGS)"; \
+			if echo "$$pkg" | grep -q "^java/"; then \
+				flags="$$flags --patch-module java.base=$$root"; \
+			fi; \
+			$(JAVAC) $$flags -d $$root $$f; \
+		else \
+			$(JAVAC) $(JAVAC_FLAGS) -d $$dir $$f; \
+		fi; \
+	done
