@@ -126,6 +126,13 @@ void jmevm_runtime_init_native(void) {
   (void)jmevm_native_register("java/io/PrintStream", "println",
                               "(Ljava/lang/String;)V", native_println_string);
 
+  /* Native bridge for: System.println(int) and System.println(String) */
+  (void)jmevm_native_register("java/lang/System", "println", "(I)V",
+                              native_println_int);
+
+  (void)jmevm_native_register("java/lang/System", "println",
+                              "(Ljava/lang/String;)V", native_println_string);
+
   g_native_inited = 1;
 }
 

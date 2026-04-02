@@ -1410,6 +1410,8 @@ static int vm_exec(struct jmevm_vm *vm) {
 
 jmevm_vm *jmevm_vm_create(void) {
   jmevm_vm *vm = (jmevm_vm *)calloc(1, sizeof(jmevm_vm));
+  extern void jmevm_cldc_init(jmevm_vm * vm);
+  jmevm_cldc_init(vm);
   return vm;
 }
 

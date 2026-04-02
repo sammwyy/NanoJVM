@@ -60,20 +60,14 @@ $(MAIN_OBJ): main.c
 clean:
 	rm -rf $(BUILD_DIR) jmevm
 
-JAVA_SRCS := $(shell find samples -name "*.java" -not -path "samples/build/*")
+JAVA_SRCS := $(shell find samples -name "*.java")
+CLDC_SRCS := $(shell find cldc/classes -name "*.java")
 
 java:
 	@for f in $(JAVA_SRCS); do \
 		dir=$$(dirname $$f); \
-		pkg=$$(grep "package " $$f | head -1 | sed 's/package \(.*\);/\1/' | tr '.' '/'); \
-		if [ -n "$$pkg" ]; then \
-			root=$$(echo $$dir | sed "s|/$$pkg||"); \
-			flags="$(JAVAC_FLAGS)"; \
-			if echo "$$pkg" | grep -q "^java/"; then \
-				flags="$$flags --patch-module java.base=$$root"; \
-			fi; \
-			$(JAVAC) $$flags -d $$root $$f; \
-		else \
-			$(JAVAC) $(JAVAC_FLAGS) -d $$dir $$f; \
-		fi; \
+		$(JAVAC) $(JAVAC_FLAGS) -d $$dir $$f; \
 	done
+
+cldc-classes:
+	bash cldc/gen_headers.sh
