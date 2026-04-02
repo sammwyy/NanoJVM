@@ -1,4 +1,4 @@
-#ifndef JMEVM_MIDP_NET_H
-#define JMEVM_MIDP_NET_H
+#ifndef JVM_MIDP_NET_H
+#define JVM_MIDP_NET_H
 
 #endif

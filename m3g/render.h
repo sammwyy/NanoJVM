@@ -1,4 +1,4 @@
-#ifndef JMEVM_M3G_RENDER_H
-#define JMEVM_M3G_RENDER_H
+#ifndef JVM_M3G_RENDER_H
+#define JVM_M3G_RENDER_H
 
 #endif

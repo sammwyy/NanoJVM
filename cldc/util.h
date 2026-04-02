@@ -1,4 +1,4 @@
-#ifndef JMEVM_CLDC_UTIL_H
-#define JMEVM_CLDC_UTIL_H
+#ifndef JVM_CLDC_UTIL_H
+#define JVM_CLDC_UTIL_H
 
 #endif

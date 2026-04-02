@@ -41,24 +41,24 @@ MAIN_OBJ = $(BUILD_DIR)/main.o
 
 .PHONY: all clean java cldc-classes
 
-all: $(BUILD_DIR)/libjmevm.a jmevm
+all: $(BUILD_DIR)/libnanojvm.a nanojvm
 
 $(BUILD_DIR)/%.o: %.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(BUILD_DIR)/libjmevm.a: $(LIB_OBJS)
+$(BUILD_DIR)/libnanojvm.a: $(LIB_OBJS)
 	$(AR) rcs $@ $^
 
-jmevm: $(MAIN_OBJ) $(BUILD_DIR)/libjmevm.a
-	$(CC) $(LDFLAGS) -o $@ $(MAIN_OBJ) -L$(BUILD_DIR) -ljmevm
+nanojvm: $(MAIN_OBJ) $(BUILD_DIR)/libnanojvm.a
+	$(CC) $(LDFLAGS) -o $@ $(MAIN_OBJ) -L$(BUILD_DIR) -lnanojvm
 
 $(MAIN_OBJ): main.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-	rm -rf $(BUILD_DIR) jmevm
+	rm -rf $(BUILD_DIR) nanojvm
 
 JAVA_SRCS := $(shell find samples -name "*.java")
 CLDC_SRCS := $(shell find cldc/classes -name "*.java")

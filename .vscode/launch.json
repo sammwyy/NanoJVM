@@ -5,7 +5,7 @@
             "name": "Debug Current Sample",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/jmevm",
+            "program": "${workspaceFolder}/nanojvm",
             "args": [
                 "${workspaceFolder}/samples/${fileBasenameNoExtension}.class"
             ],
@@ -14,7 +14,7 @@
             "environment": [],
             "externalConsole": false,
             "MIMode": "gdb",
-            "preLaunchTask": "Build JMEVM",
+            "preLaunchTask": "Build NanoJVM",
             "setupCommands": [
                 {
                     "description": "Enable pretty-printing for gdb",

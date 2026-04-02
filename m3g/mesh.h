@@ -1,4 +1,4 @@
-#ifndef JMEVM_M3G_MESH_H
-#define JMEVM_M3G_MESH_H
+#ifndef JVM_M3G_MESH_H
+#define JVM_M3G_MESH_H
 
 #endif

@@ -87,7 +87,7 @@ static char *parse_main_class(const uint8_t *manifest, size_t len) {
 /* -------------------------------------------------------------------------
  * Public API
  * ---------------------------------------------------------------------- */
-jmevm_jar *jmevm_jar_open(const char *path) {
+jvm_jar *jvm_jar_open(const char *path) {
   if (!path)
     return NULL;
   size_t len = 0;
@@ -95,15 +95,15 @@ jmevm_jar *jmevm_jar_open(const char *path) {
   if (!buf)
     return NULL;
 
-  jmevm_zip *zip = jmevm_zip_open(buf, len);
+  jvm_zip *zip = jvm_zip_open(buf, len);
   if (!zip) {
     free(buf);
     return NULL;
   }
 
-  jmevm_jar *jar = (jmevm_jar *)calloc(1, sizeof(*jar));
+  jvm_jar *jar = (jvm_jar *)calloc(1, sizeof(*jar));
   if (!jar) {
-    jmevm_zip_close(zip);
+    jvm_zip_close(zip);
     free(buf);
     return NULL;
   }
@@ -112,10 +112,10 @@ jmevm_jar *jmevm_jar_open(const char *path) {
   jar->zip = zip;
 
   /* Try to read Main-Class from manifest */
-  int mf_idx = jmevm_zip_entry_find(zip, "META-INF/MANIFEST.MF");
+  int mf_idx = jvm_zip_entry_find(zip, "META-INF/MANIFEST.MF");
   if (mf_idx >= 0) {
     size_t mf_len = 0;
-    uint8_t *mf = jmevm_zip_entry_read(zip, (size_t)mf_idx, &mf_len);
+    uint8_t *mf = jvm_zip_entry_read(zip, (size_t)mf_idx, &mf_len);
     if (mf) {
       jar->main_class = parse_main_class(mf, mf_len);
       free(mf);
@@ -125,20 +125,20 @@ jmevm_jar *jmevm_jar_open(const char *path) {
   return jar;
 }
 
-void jmevm_jar_close(jmevm_jar *jar) {
+void jvm_jar_close(jvm_jar *jar) {
   if (!jar)
     return;
-  jmevm_zip_close(jar->zip);
+  jvm_zip_close(jar->zip);
   free(jar->buf);
   free(jar->main_class);
   free(jar);
 }
 
-size_t jmevm_jar_entry_count(const jmevm_jar *jar) {
-  return jar ? jmevm_zip_entry_count(jar->zip) : 0;
+size_t jvm_jar_entry_count(const jvm_jar *jar) {
+  return jar ? jvm_zip_entry_count(jar->zip) : 0;
 }
 
-int jmevm_jar_find_class(const jmevm_jar *jar, const char *class_name) {
+int jvm_jar_find_class(const jvm_jar *jar, const char *class_name) {
   if (!jar || !class_name)
     return -1;
   size_t nlen = strlen(class_name);
@@ -148,22 +148,21 @@ int jmevm_jar_find_class(const jmevm_jar *jar, const char *class_name) {
     return -1;
   memcpy(key, class_name, nlen);
   memcpy(key + nlen, ".class", 7);
-  int idx = jmevm_zip_entry_find(jar->zip, key);
+  int idx = jvm_zip_entry_find(jar->zip, key);
   free(key);
   return idx;
 }
 
-uint8_t *jmevm_jar_read_entry(const jmevm_jar *jar, size_t idx,
-                              size_t *out_len) {
+uint8_t *jvm_jar_read_entry(const jvm_jar *jar, size_t idx, size_t *out_len) {
   if (!jar)
     return NULL;
-  return jmevm_zip_entry_read(jar->zip, idx, out_len);
+  return jvm_zip_entry_read(jar->zip, idx, out_len);
 }
 
-uint8_t *jmevm_jar_read_class(const jmevm_jar *jar, const char *class_name,
-                              size_t *out_len) {
-  int idx = jmevm_jar_find_class(jar, class_name);
+uint8_t *jvm_jar_read_class(const jvm_jar *jar, const char *class_name,
+                            size_t *out_len) {
+  int idx = jvm_jar_find_class(jar, class_name);
   if (idx < 0)
     return NULL;
-  return jmevm_zip_entry_read(jar->zip, (size_t)idx, out_len);
+  return jvm_zip_entry_read(jar->zip, (size_t)idx, out_len);
 }

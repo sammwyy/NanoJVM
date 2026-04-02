@@ -1,4 +1,4 @@
-#ifndef JMEVM_MIDP_RMS_H
-#define JMEVM_MIDP_RMS_H
+#ifndef JVM_MIDP_RMS_H
+#define JVM_MIDP_RMS_H
 
 #endif

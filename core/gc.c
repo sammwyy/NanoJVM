@@ -6,37 +6,37 @@
 #include <stdlib.h>
 #include <string.h>
 
-extern jmevm_object *jmevm_heap_get_objects(void);
-extern uint16_t jmevm_heap_get_max_objects(void);
+extern jvm_object *jvm_heap_get_objects(void);
+extern uint16_t jvm_heap_get_max_objects(void);
 
-static void mark_object(struct jmevm_vm *vm, int32_t ref);
+static void mark_object(struct jvm_vm *vm, int32_t ref);
 
-static void mark_value(struct jmevm_vm *vm, int32_t val) {
+static void mark_value(struct jvm_vm *vm, int32_t val) {
   if (val <= 0)
     return;
   mark_object(vm, val);
 }
 
-static void mark_object(struct jmevm_vm *vm, int32_t ref) {
-  uint16_t max_objs = jmevm_heap_get_max_objects();
+static void mark_object(struct jvm_vm *vm, int32_t ref) {
+  uint16_t max_objs = jvm_heap_get_max_objects();
   if (ref <= 0 || ref >= max_objs)
     return;
 
-  jmevm_object *objs = jmevm_heap_get_objects();
-  jmevm_object *obj = &objs[ref];
+  jvm_object *objs = jvm_heap_get_objects();
+  jvm_object *obj = &objs[ref];
 
-  if (obj->type == JMEVM_OBJ_FREE || obj->marked)
+  if (obj->type == JVM_OBJ_FREE || obj->marked)
     return;
 
   obj->marked = 1;
 
   // Follow references
-  if (obj->type == JMEVM_OBJ_CLASS) {
+  if (obj->type == JVM_OBJ_CLASS) {
     uint16_t fields_count = obj->cf ? obj->cf->fields_count : 2;
     for (uint16_t i = 0; i < fields_count; i++) {
       mark_value(vm, obj->fields[i]);
     }
-  } else if (obj->type == JMEVM_OBJ_ARRAY_OBJ) {
+  } else if (obj->type == JVM_OBJ_ARRAY_OBJ) {
     int32_t *data = (int32_t *)obj->data;
     for (int32_t i = 0; i < obj->length; i++) {
       mark_value(vm, data[i]);
@@ -44,9 +44,9 @@ static void mark_object(struct jmevm_vm *vm, int32_t ref) {
   }
 }
 
-void jmevm_gc_run(struct jmevm_vm *vm) {
-  jmevm_object *objs = jmevm_heap_get_objects();
-  uint16_t max_objs = jmevm_heap_get_max_objects();
+void jvm_gc_run(struct jvm_vm *vm) {
+  jvm_object *objs = jvm_heap_get_objects();
+  uint16_t max_objs = jvm_heap_get_max_objects();
 
   // 1. Reset mark flags
   for (uint16_t i = 0; i < max_objs; i++) {
@@ -55,7 +55,7 @@ void jmevm_gc_run(struct jmevm_vm *vm) {
 
   // 2. Mark roots
   for (uint16_t fidx = 0; fidx < vm->frame_top; fidx++) {
-    jmevm_frame *f = &vm->frames[fidx];
+    jvm_frame *f = &vm->frames[fidx];
     for (uint16_t i = 0; i < f->max_locals; i++) {
       mark_value(vm, f->locals[i]);
     }
@@ -71,7 +71,7 @@ void jmevm_gc_run(struct jmevm_vm *vm) {
   // 3. Sweep
   size_t reclaimed_count = 0;
   for (uint16_t i = 1; i < max_objs; i++) {
-    if (objs[i].type != JMEVM_OBJ_FREE && !objs[i].marked) {
+    if (objs[i].type != JVM_OBJ_FREE && !objs[i].marked) {
       // Reclaim
       if (objs[i].fields) {
         free(objs[i].fields);
@@ -81,7 +81,7 @@ void jmevm_gc_run(struct jmevm_vm *vm) {
         free(objs[i].data);
         objs[i].data = NULL;
       }
-      objs[i].type = JMEVM_OBJ_FREE;
+      objs[i].type = JVM_OBJ_FREE;
       objs[i].cf = NULL;
       reclaimed_count++;
     }

@@ -1,4 +1,4 @@
-#ifndef JMEVM_CLDC_IO_H
-#define JMEVM_CLDC_IO_H
+#ifndef JVM_CLDC_IO_H
+#define JVM_CLDC_IO_H
 
 #endif

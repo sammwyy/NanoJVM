@@ -1,8 +1,8 @@
 #include "core/classfile.h"
 #include "core/runtime.h"
-#include "jmevm.h"
 #include "loader/jar.h"
 #include "loader/resource.h"
+#include "nanojvm.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -41,13 +41,12 @@ static void usage(const char *prog) {
 /* -------------------------------------------------------------------------
  * Load every .class from a JAR into the VM registry
  * ---------------------------------------------------------------------- */
-static int load_all_classes_from_jar(jmevm_vm *vm, jmevm_jar *jar,
-                                     int verbose) {
-  size_t n = jmevm_jar_entry_count(jar);
+static int load_all_classes_from_jar(jvm_vm *vm, jvm_jar *jar, int verbose) {
+  size_t n = jvm_jar_entry_count(jar);
   int loaded = 0;
   for (size_t i = 0; i < n; i++) {
-    jmevm_zip_entry ze;
-    if (jmevm_zip_entry_get(jar->zip, i, &ze) != 0)
+    jvm_zip_entry ze;
+    if (jvm_zip_entry_get(jar->zip, i, &ze) != 0)
       continue;
     /* Only .class files */
     if (ze.name_len < 6)
@@ -60,11 +59,11 @@ static int load_all_classes_from_jar(jmevm_vm *vm, jmevm_jar *jar,
       continue;
 
     size_t bytes_len = 0;
-    uint8_t *bytes = jmevm_jar_read_entry(jar, i, &bytes_len);
+    uint8_t *bytes = jvm_jar_read_entry(jar, i, &bytes_len);
     if (!bytes)
       continue;
 
-    jmevm_classfile *cf = jmevm_classfile_load_from_buffer(bytes, bytes_len);
+    jvm_classfile *cf = jvm_classfile_load_from_buffer(bytes, bytes_len);
     /* Note: classfile keeps a pointer to bytes — we must NOT free it here.
      * Instead we accept this leak for now; a proper VM would own the buf. */
     if (!cf) {
@@ -72,7 +71,7 @@ static int load_all_classes_from_jar(jmevm_vm *vm, jmevm_jar *jar,
       continue;
     }
 
-    jmevm_vm_register_class(vm, cf);
+    jvm_vm_register_class(vm, cf);
     loaded++;
     if (verbose) {
       fprintf(stderr, "[load] %.*s\n", (int)ze.name_len, ze.name);
@@ -86,8 +85,8 @@ static int load_all_classes_from_jar(jmevm_vm *vm, jmevm_jar *jar,
 /* -------------------------------------------------------------------------
  * Load a single .class file from disk into the VM registry
  * ---------------------------------------------------------------------- */
-static jmevm_classfile *load_class_file(jmevm_vm *vm, const char *path,
-                                        int verbose) {
+static jvm_classfile *load_class_file(jvm_vm *vm, const char *path,
+                                      int verbose) {
   FILE *f = fopen(path, "rb");
   if (!f)
     return NULL;
@@ -112,12 +111,12 @@ static jmevm_classfile *load_class_file(jmevm_vm *vm, const char *path,
     return NULL;
   }
   fclose(f);
-  jmevm_classfile *cf = jmevm_classfile_load_from_buffer(buf, (size_t)sz);
+  jvm_classfile *cf = jvm_classfile_load_from_buffer(buf, (size_t)sz);
   if (!cf) {
     free(buf);
     return NULL;
   }
-  jmevm_vm_register_class(vm, cf);
+  jvm_vm_register_class(vm, cf);
   if (verbose)
     fprintf(stderr, "[load] %s\n", path);
   return cf;
@@ -126,18 +125,18 @@ static jmevm_classfile *load_class_file(jmevm_vm *vm, const char *path,
 /* -------------------------------------------------------------------------
  * Find and run the main method of a given class name
  * ---------------------------------------------------------------------- */
-static int run_main_class(jmevm_vm *vm, jmevm_classpath *cp,
-                          const char *class_name, int verbose) {
+static int run_main_class(jvm_vm *vm, jvm_classpath *cp, const char *class_name,
+                          int verbose) {
   /* Try to find the class in the classpath first */
   size_t class_len = 0;
-  uint8_t *class_buf = jmevm_classpath_find_class(cp, class_name, &class_len);
+  uint8_t *class_buf = jvm_classpath_find_class(cp, class_name, &class_len);
 
-  jmevm_classfile *main_cf = NULL;
+  jvm_classfile *main_cf = NULL;
 
   if (class_buf) {
-    main_cf = jmevm_classfile_load_from_buffer(class_buf, class_len);
+    main_cf = jvm_classfile_load_from_buffer(class_buf, class_len);
     if (main_cf) {
-      jmevm_vm_register_class(vm, main_cf);
+      jvm_vm_register_class(vm, main_cf);
       if (verbose)
         fprintf(stderr, "[load] %s (from classpath)\n", class_name);
     } else {
@@ -167,8 +166,8 @@ static int run_main_class(jmevm_vm *vm, jmevm_classpath *cp,
     return 1;
   }
 
-  jmevm_main_method m;
-  if (jmevm_classfile_extract_main(main_cf, &m) != 0) {
+  jvm_main_method m;
+  if (jvm_classfile_extract_main(main_cf, &m) != 0) {
     /* Convert slashes to dots for the error message */
     char *display = strdup(class_name);
     if (display) {
@@ -182,10 +181,10 @@ static int run_main_class(jmevm_vm *vm, jmevm_classpath *cp,
     return 1;
   }
 
-  jmevm_runtime_init_native();
+  jvm_runtime_init_native();
 
   int rc =
-      jmevm_vm_run(vm, main_cf, m.code, m.code_len, m.max_locals, m.max_stack);
+      jvm_vm_run(vm, main_cf, m.code, m.code_len, m.max_locals, m.max_stack);
   return (rc == 0) ? 0 : 1;
 }
 
@@ -193,13 +192,13 @@ static int run_main_class(jmevm_vm *vm, jmevm_classpath *cp,
  * main
  * ---------------------------------------------------------------------- */
 int main(int argc, char **argv) {
-  const char *prog = (argc > 0 && argv[0]) ? argv[0] : "jmevm";
+  const char *prog = (argc > 0 && argv[0]) ? argv[0] : "nanojvm";
   int verbose = 0;
   int jar_mode = 0; /* -jar flag */
   const char *jar_path = NULL;
   const char *main_class = NULL;
 
-  jmevm_classpath *cp = jmevm_classpath_create();
+  jvm_classpath *cp = jvm_classpath_create();
   if (!cp) {
     fprintf(stderr, "Out of memory\n");
     return 1;
@@ -215,13 +214,13 @@ int main(int argc, char **argv) {
     if (strcmp(arg, "-help") == 0 || strcmp(arg, "--help") == 0 ||
         strcmp(arg, "-h") == 0) {
       usage(prog);
-      jmevm_classpath_destroy(cp);
+      jvm_classpath_destroy(cp);
       return 0;
     }
 
     if (strcmp(arg, "-version") == 0 || strcmp(arg, "--version") == 0) {
-      printf("jmevm 1.0  (minimal JVM for Java ME / CLDC)\n");
-      jmevm_classpath_destroy(cp);
+      printf("nanojvm 1.0  (minimal JVM for Java ME / CLDC)\n");
+      jvm_classpath_destroy(cp);
       return 0;
     }
 
@@ -233,19 +232,19 @@ int main(int argc, char **argv) {
 
     if ((strcmp(arg, "-cp") == 0 || strcmp(arg, "-classpath") == 0) &&
         i + 1 < argc) {
-      jmevm_classpath_add_path(cp, argv[++i]);
+      jvm_classpath_add_path(cp, argv[++i]);
       i++;
       continue;
     }
 
     /* -cp=<path> or -classpath=<path> */
     if ((strncmp(arg, "-cp=", 4) == 0)) {
-      jmevm_classpath_add_path(cp, arg + 4);
+      jvm_classpath_add_path(cp, arg + 4);
       i++;
       continue;
     }
     if ((strncmp(arg, "-classpath=", 11) == 0)) {
-      jmevm_classpath_add_path(cp, arg + 11);
+      jvm_classpath_add_path(cp, arg + 11);
       i++;
       continue;
     }
@@ -278,17 +277,17 @@ int main(int argc, char **argv) {
 
   if (!jar_mode && !main_class) {
     usage(prog);
-    jmevm_classpath_destroy(cp);
+    jvm_classpath_destroy(cp);
     return 1;
   }
 
   /* -----------------------------------------------------------------------
    * Boot the VM
    * -------------------------------------------------------------------- */
-  jmevm_vm *vm = jmevm_vm_create(); /* also calls jmevm_cldc_init() */
+  jvm_vm *vm = jvm_vm_create(); /* also calls jvm_cldc_init() */
   if (!vm) {
     fprintf(stderr, "error: failed to create VM\n");
-    jmevm_classpath_destroy(cp);
+    jvm_classpath_destroy(cp);
     return 1;
   }
 
@@ -296,19 +295,19 @@ int main(int argc, char **argv) {
    * -jar mode: load JAR, get Main-Class from manifest
    * -------------------------------------------------------------------- */
   if (jar_mode) {
-    jmevm_jar *jar = jmevm_jar_open(jar_path);
+    jvm_jar *jar = jvm_jar_open(jar_path);
     if (!jar) {
       fprintf(stderr, "error: could not open JAR: %s\n", jar_path);
-      jmevm_vm_destroy(vm);
-      jmevm_classpath_destroy(cp);
+      jvm_vm_destroy(vm);
+      jvm_classpath_destroy(cp);
       return 1;
     }
     if (!jar->main_class) {
       fprintf(stderr, "error: no Main-Class attribute in %s manifest\n",
               jar_path);
-      jmevm_jar_close(jar);
-      jmevm_vm_destroy(vm);
-      jmevm_classpath_destroy(cp);
+      jvm_jar_close(jar);
+      jvm_vm_destroy(vm);
+      jvm_classpath_destroy(cp);
       return 1;
     }
     main_class = strdup(jar->main_class); /* keep after jar_close */
@@ -316,7 +315,7 @@ int main(int argc, char **argv) {
       fprintf(stderr, "[jar] Main-Class: %s\n", main_class);
 
     load_all_classes_from_jar(vm, jar, verbose);
-    jmevm_jar_close(jar);
+    jvm_jar_close(jar);
   }
 
   /* -----------------------------------------------------------------------
@@ -324,11 +323,11 @@ int main(int argc, char **argv) {
    * (For a minimal VM this avoids lazy-loading complexity.)
    * -------------------------------------------------------------------- */
   for (size_t j = 0; j < cp->count; j++) {
-    jmevm_cp_entry *e = &cp->entries[j];
-    if (e->kind == JMEVM_CP_JAR && e->jar) {
+    jvm_cp_entry *e = &cp->entries[j];
+    if (e->kind == JVM_CP_JAR && e->jar) {
       load_all_classes_from_jar(vm, e->jar, verbose);
     }
-    /* JMEVM_CP_DIR and JMEVM_CP_CLASS are searched lazily in run_main_class */
+    /* JVM_CP_DIR and JVM_CP_CLASS are searched lazily in run_main_class */
   }
 
   /* -----------------------------------------------------------------------
@@ -347,8 +346,8 @@ int main(int argc, char **argv) {
       /* Strip .class suffix */
       class_path_buf = strdup(main_class);
       if (!class_path_buf) {
-        jmevm_vm_destroy(vm);
-        jmevm_classpath_destroy(cp);
+        jvm_vm_destroy(vm);
+        jvm_classpath_destroy(cp);
         return 1;
       }
       class_path_buf[mlen - 6] = '\0';
@@ -359,11 +358,11 @@ int main(int argc, char **argv) {
       if (sep) {
         *sep = '\0';
         /* Add directory to classpath */
-        jmevm_classpath_add(cp, class_path_buf);
+        jvm_classpath_add(cp, class_path_buf);
         class_for_name = sep + 1;
       } else {
         /* No directory: use "." */
-        jmevm_classpath_add(cp, ".");
+        jvm_classpath_add(cp, ".");
         class_for_name = class_path_buf;
       }
     }
@@ -376,8 +375,8 @@ int main(int argc, char **argv) {
   char *class_slashed = strdup(class_for_name);
   free(class_path_buf);
   if (!class_slashed) {
-    jmevm_vm_destroy(vm);
-    jmevm_classpath_destroy(cp);
+    jvm_vm_destroy(vm);
+    jvm_classpath_destroy(cp);
     return 1;
   }
   for (char *p = class_slashed; *p; p++)
@@ -392,7 +391,7 @@ int main(int argc, char **argv) {
   free(class_slashed);
   if (jar_mode)
     free((void *)main_class);
-  jmevm_vm_destroy(vm);
-  jmevm_classpath_destroy(cp);
+  jvm_vm_destroy(vm);
+  jvm_classpath_destroy(cp);
   return rc;
 }

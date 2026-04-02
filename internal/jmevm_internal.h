@@ -1,4 +1,4 @@
-#ifndef JMEVM_INTERNAL_H
-#define JMEVM_INTERNAL_H
+#ifndef JVM_INTERNAL_H
+#define JVM_INTERNAL_H
 
 #endif

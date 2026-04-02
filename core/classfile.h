@@ -1,7 +1,7 @@
-#ifndef JMEVM_CORE_CLASSFILE_H
-#define JMEVM_CORE_CLASSFILE_H
+#ifndef JVM_CORE_CLASSFILE_H
+#define JVM_CORE_CLASSFILE_H
 
-#include "jmevm.h"
+#include "nanojvm.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -12,14 +12,14 @@
  *   name: "main"
  *   descriptor: "([Ljava/lang/String;)V"
  */
-struct jmevm_exception_handler {
+struct jvm_exception_handler {
   uint16_t start_pc;
   uint16_t end_pc;
   uint16_t handler_pc;
   uint16_t catch_type; /* 0 for any exception, else constant-pool index */
 };
 
-struct jmevm_method {
+struct jvm_method {
   uint16_t name_cp_index;       /* CONSTANT_Utf8 */
   uint16_t descriptor_cp_index; /* CONSTANT_Utf8 */
 
@@ -29,15 +29,15 @@ struct jmevm_method {
   uint16_t max_locals;
 
   uint16_t exception_table_length;
-  struct jmevm_exception_handler *exception_table;
+  struct jvm_exception_handler *exception_table;
 };
 
-struct jmevm_field {
+struct jvm_field {
   uint16_t name_cp_index;       /* CONSTANT_Utf8 */
   uint16_t descriptor_cp_index; /* CONSTANT_Utf8 */
 };
 
-struct jmevm_classfile {
+struct jvm_classfile {
   const uint8_t *buf;
   size_t len;
 
@@ -72,42 +72,42 @@ struct jmevm_classfile {
   uint16_t main_max_locals;
 
   uint16_t fields_count;
-  struct jmevm_field *fields;
+  struct jvm_field *fields;
 
   uint16_t methods_count;
-  struct jmevm_method *methods;
+  struct jvm_method *methods;
 };
 
 /* Lookup by constant-pool UTF8 indices (name+descriptor). */
-const struct jmevm_method *
-jmevm_classfile_lookup_method(const struct jmevm_classfile *cf,
-                              uint16_t name_cp_index,
-                              uint16_t descriptor_cp_index);
+const struct jvm_method *
+jvm_classfile_lookup_method(const struct jvm_classfile *cf,
+                            uint16_t name_cp_index,
+                            uint16_t descriptor_cp_index);
 
 /**
  * Resolves a method by its name and descriptor.
  */
-const struct jmevm_method *
-jmevm_classfile_resolve_method(const struct jmevm_classfile *cf,
-                               const char *name, const char *descriptor);
+const struct jvm_method *
+jvm_classfile_resolve_method(const struct jvm_classfile *cf, const char *name,
+                             const char *descriptor);
 
 /**
  * Resolves a field index based on its name and descriptor.
  */
-int jmevm_classfile_resolve_field(const struct jmevm_classfile *cf,
-                                  const char *name, const char *descriptor);
+int jvm_classfile_resolve_field(const struct jvm_classfile *cf,
+                                const char *name, const char *descriptor);
 
 /**
  * Gets a UTF-8 string from the constant pool as a null-terminated string.
  * The caller must free the returned string.
  */
-char *jmevm_classfile_get_utf8_copy(const struct jmevm_classfile *cf,
-                                    uint16_t cp_index);
+char *jvm_classfile_get_utf8_copy(const struct jvm_classfile *cf,
+                                  uint16_t cp_index);
 
 /**
  * Returns 1 if the UTF-8 entry at the given index equals the given string.
  */
-int jmevm_classfile_utf8_equals(const struct jmevm_classfile *cf,
-                                uint16_t cp_index, const char *s);
+int jvm_classfile_utf8_equals(const struct jvm_classfile *cf, uint16_t cp_index,
+                              const char *s);
 
-#endif /* JMEVM_CORE_CLASSFILE_H */
+#endif /* JVM_CORE_CLASSFILE_H */

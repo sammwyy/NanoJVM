@@ -27,7 +27,7 @@ typedef struct zip_entry_idx {
   const char *name; /* points into the source buffer            */
 } zip_entry_idx;
 
-struct jmevm_zip {
+struct jvm_zip {
   const uint8_t *data;
   size_t len;
   zip_entry_idx *entries;
@@ -61,7 +61,7 @@ static int find_eocd(const uint8_t *data, size_t len, size_t *eocd_off) {
 /* -------------------------------------------------------------------------
  * Open / close
  * ---------------------------------------------------------------------- */
-jmevm_zip *jmevm_zip_open(const uint8_t *data, size_t len) {
+jvm_zip *jvm_zip_open(const uint8_t *data, size_t len) {
   if (!data || len < 22)
     return NULL;
 
@@ -69,29 +69,29 @@ jmevm_zip *jmevm_zip_open(const uint8_t *data, size_t len) {
   if (find_eocd(data, len, &eocd_off) != 0)
     return NULL;
 
-  jmevm_stream eocd;
-  jmevm_stream_init(&eocd, data + eocd_off, len - eocd_off);
+  jvm_stream eocd;
+  jvm_stream_init(&eocd, data + eocd_off, len - eocd_off);
 
   uint32_t sig = 0;
   uint16_t disk_num, disk_start, local_entries, total_entries;
   uint32_t cd_size, cd_offset;
   uint16_t comment_len;
 
-  if (jmevm_stream_read_u32le(&eocd, &sig) != 0)
+  if (jvm_stream_read_u32le(&eocd, &sig) != 0)
     return NULL;
-  if (jmevm_stream_read_u16le(&eocd, &disk_num) != 0)
+  if (jvm_stream_read_u16le(&eocd, &disk_num) != 0)
     return NULL;
-  if (jmevm_stream_read_u16le(&eocd, &disk_start) != 0)
+  if (jvm_stream_read_u16le(&eocd, &disk_start) != 0)
     return NULL;
-  if (jmevm_stream_read_u16le(&eocd, &local_entries) != 0)
+  if (jvm_stream_read_u16le(&eocd, &local_entries) != 0)
     return NULL;
-  if (jmevm_stream_read_u16le(&eocd, &total_entries) != 0)
+  if (jvm_stream_read_u16le(&eocd, &total_entries) != 0)
     return NULL;
-  if (jmevm_stream_read_u32le(&eocd, &cd_size) != 0)
+  if (jvm_stream_read_u32le(&eocd, &cd_size) != 0)
     return NULL;
-  if (jmevm_stream_read_u32le(&eocd, &cd_offset) != 0)
+  if (jvm_stream_read_u32le(&eocd, &cd_offset) != 0)
     return NULL;
-  if (jmevm_stream_read_u16le(&eocd, &comment_len) != 0)
+  if (jvm_stream_read_u16le(&eocd, &comment_len) != 0)
     return NULL;
   (void)disk_num;
   (void)disk_start;
@@ -101,7 +101,7 @@ jmevm_zip *jmevm_zip_open(const uint8_t *data, size_t len) {
   if ((size_t)cd_offset >= len)
     return NULL;
 
-  jmevm_zip *z = (jmevm_zip *)calloc(1, sizeof(*z));
+  jvm_zip *z = (jvm_zip *)calloc(1, sizeof(*z));
   if (!z)
     return NULL;
   z->data = data;
@@ -116,12 +116,12 @@ jmevm_zip *jmevm_zip_open(const uint8_t *data, size_t len) {
     return NULL;
   }
 
-  jmevm_stream cd;
-  jmevm_stream_init(&cd, data + cd_offset, len - cd_offset);
+  jvm_stream cd;
+  jvm_stream_init(&cd, data + cd_offset, len - cd_offset);
 
   for (uint16_t i = 0; i < total_entries; i++) {
     uint32_t csig = 0;
-    if (jmevm_stream_read_u32le(&cd, &csig) != 0)
+    if (jvm_stream_read_u32le(&cd, &csig) != 0)
       break;
     if (csig != ZIP_SIG_CENTRAL)
       break;
@@ -132,35 +132,35 @@ jmevm_zip *jmevm_zip_open(const uint8_t *data, size_t len) {
     uint16_t disk_start2, int_attr;
     uint32_t ext_attr, local_off;
 
-    if (jmevm_stream_read_u16le(&cd, &ver_made) != 0)
+    if (jvm_stream_read_u16le(&cd, &ver_made) != 0)
       break;
-    if (jmevm_stream_read_u16le(&cd, &ver_need) != 0)
+    if (jvm_stream_read_u16le(&cd, &ver_need) != 0)
       break;
-    if (jmevm_stream_read_u16le(&cd, &flags) != 0)
+    if (jvm_stream_read_u16le(&cd, &flags) != 0)
       break;
-    if (jmevm_stream_read_u16le(&cd, &method) != 0)
+    if (jvm_stream_read_u16le(&cd, &method) != 0)
       break;
-    if (jmevm_stream_read_u32le(&cd, &mod_time) != 0)
+    if (jvm_stream_read_u32le(&cd, &mod_time) != 0)
       break;
-    if (jmevm_stream_read_u32le(&cd, &crc32_val) != 0)
+    if (jvm_stream_read_u32le(&cd, &crc32_val) != 0)
       break;
-    if (jmevm_stream_read_u32le(&cd, &comp_sz) != 0)
+    if (jvm_stream_read_u32le(&cd, &comp_sz) != 0)
       break;
-    if (jmevm_stream_read_u32le(&cd, &uncomp_sz) != 0)
+    if (jvm_stream_read_u32le(&cd, &uncomp_sz) != 0)
       break;
-    if (jmevm_stream_read_u16le(&cd, &fname_len) != 0)
+    if (jvm_stream_read_u16le(&cd, &fname_len) != 0)
       break;
-    if (jmevm_stream_read_u16le(&cd, &extra_len) != 0)
+    if (jvm_stream_read_u16le(&cd, &extra_len) != 0)
       break;
-    if (jmevm_stream_read_u16le(&cd, &comment_len2) != 0)
+    if (jvm_stream_read_u16le(&cd, &comment_len2) != 0)
       break;
-    if (jmevm_stream_read_u16le(&cd, &disk_start2) != 0)
+    if (jvm_stream_read_u16le(&cd, &disk_start2) != 0)
       break;
-    if (jmevm_stream_read_u16le(&cd, &int_attr) != 0)
+    if (jvm_stream_read_u16le(&cd, &int_attr) != 0)
       break;
-    if (jmevm_stream_read_u32le(&cd, &ext_attr) != 0)
+    if (jvm_stream_read_u32le(&cd, &ext_attr) != 0)
       break;
-    if (jmevm_stream_read_u32le(&cd, &local_off) != 0)
+    if (jvm_stream_read_u32le(&cd, &local_off) != 0)
       break;
     (void)ver_made;
     (void)ver_need;
@@ -171,7 +171,7 @@ jmevm_zip *jmevm_zip_open(const uint8_t *data, size_t len) {
     (void)int_attr;
     (void)ext_attr;
 
-    if (!jmevm_stream_has(&cd, fname_len))
+    if (!jvm_stream_has(&cd, fname_len))
       break;
     zip_entry_idx *e = &z->entries[z->count++];
     e->name = (const char *)(cd.data + cd.pos);
@@ -181,27 +181,27 @@ jmevm_zip *jmevm_zip_open(const uint8_t *data, size_t len) {
     e->uncompressed_size = uncomp_sz;
     e->offset = local_off;
 
-    if (jmevm_stream_skip(&cd, fname_len) != 0)
+    if (jvm_stream_skip(&cd, fname_len) != 0)
       break;
-    if (jmevm_stream_skip(&cd, extra_len) != 0)
+    if (jvm_stream_skip(&cd, extra_len) != 0)
       break;
-    if (jmevm_stream_skip(&cd, comment_len2) != 0)
+    if (jvm_stream_skip(&cd, comment_len2) != 0)
       break;
   }
 
   return z;
 }
 
-void jmevm_zip_close(jmevm_zip *z) {
+void jvm_zip_close(jvm_zip *z) {
   if (!z)
     return;
   free(z->entries);
   free(z);
 }
 
-size_t jmevm_zip_entry_count(const jmevm_zip *z) { return z ? z->count : 0; }
+size_t jvm_zip_entry_count(const jvm_zip *z) { return z ? z->count : 0; }
 
-int jmevm_zip_entry_get(const jmevm_zip *z, size_t i, jmevm_zip_entry *out) {
+int jvm_zip_entry_get(const jvm_zip *z, size_t i, jvm_zip_entry *out) {
   if (!z || !out || i >= z->count)
     return -1;
   const zip_entry_idx *e = &z->entries[i];
@@ -214,7 +214,7 @@ int jmevm_zip_entry_get(const jmevm_zip *z, size_t i, jmevm_zip_entry *out) {
   return 0;
 }
 
-int jmevm_zip_entry_find(const jmevm_zip *z, const char *name) {
+int jvm_zip_entry_find(const jvm_zip *z, const char *name) {
   if (!z || !name)
     return -1;
   size_t nlen = strlen(name);
@@ -530,7 +530,7 @@ static uint8_t *do_inflate(const uint8_t *src, size_t src_len, size_t out_cap,
 /* -------------------------------------------------------------------------
  * Entry extraction
  * ---------------------------------------------------------------------- */
-uint8_t *jmevm_zip_entry_read(const jmevm_zip *z, size_t i, size_t *out_len) {
+uint8_t *jvm_zip_entry_read(const jvm_zip *z, size_t i, size_t *out_len) {
   if (!z || i >= z->count || !out_len)
     return NULL;
   const zip_entry_idx *e = &z->entries[i];
@@ -538,37 +538,37 @@ uint8_t *jmevm_zip_entry_read(const jmevm_zip *z, size_t i, size_t *out_len) {
   /* Parse local file header to find data offset */
   if ((size_t)e->offset + 30 > z->len)
     return NULL;
-  jmevm_stream lhdr;
-  jmevm_stream_init(&lhdr, z->data + e->offset, z->len - e->offset);
+  jvm_stream lhdr;
+  jvm_stream_init(&lhdr, z->data + e->offset, z->len - e->offset);
 
   uint32_t lsig = 0;
   uint16_t lver, lflags, lmethod, ltime, ldate;
   uint32_t lcrc, lcomp, luncomp;
   uint16_t lfname, lextra;
 
-  if (jmevm_stream_read_u32le(&lhdr, &lsig) != 0)
+  if (jvm_stream_read_u32le(&lhdr, &lsig) != 0)
     return NULL;
   if (lsig != ZIP_SIG_LOCAL)
     return NULL;
-  if (jmevm_stream_read_u16le(&lhdr, &lver) != 0)
+  if (jvm_stream_read_u16le(&lhdr, &lver) != 0)
     return NULL;
-  if (jmevm_stream_read_u16le(&lhdr, &lflags) != 0)
+  if (jvm_stream_read_u16le(&lhdr, &lflags) != 0)
     return NULL;
-  if (jmevm_stream_read_u16le(&lhdr, &lmethod) != 0)
+  if (jvm_stream_read_u16le(&lhdr, &lmethod) != 0)
     return NULL;
-  if (jmevm_stream_read_u16le(&lhdr, &ltime) != 0)
+  if (jvm_stream_read_u16le(&lhdr, &ltime) != 0)
     return NULL;
-  if (jmevm_stream_read_u16le(&lhdr, &ldate) != 0)
+  if (jvm_stream_read_u16le(&lhdr, &ldate) != 0)
     return NULL;
-  if (jmevm_stream_read_u32le(&lhdr, &lcrc) != 0)
+  if (jvm_stream_read_u32le(&lhdr, &lcrc) != 0)
     return NULL;
-  if (jmevm_stream_read_u32le(&lhdr, &lcomp) != 0)
+  if (jvm_stream_read_u32le(&lhdr, &lcomp) != 0)
     return NULL;
-  if (jmevm_stream_read_u32le(&lhdr, &luncomp) != 0)
+  if (jvm_stream_read_u32le(&lhdr, &luncomp) != 0)
     return NULL;
-  if (jmevm_stream_read_u16le(&lhdr, &lfname) != 0)
+  if (jvm_stream_read_u16le(&lhdr, &lfname) != 0)
     return NULL;
-  if (jmevm_stream_read_u16le(&lhdr, &lextra) != 0)
+  if (jvm_stream_read_u16le(&lhdr, &lextra) != 0)
     return NULL;
   (void)lver;
   (void)lflags;
@@ -577,18 +577,18 @@ uint8_t *jmevm_zip_entry_read(const jmevm_zip *z, size_t i, size_t *out_len) {
   (void)lcrc;
   (void)luncomp;
 
-  if (jmevm_stream_skip(&lhdr, lfname) != 0)
+  if (jvm_stream_skip(&lhdr, lfname) != 0)
     return NULL;
-  if (jmevm_stream_skip(&lhdr, lextra) != 0)
+  if (jvm_stream_skip(&lhdr, lextra) != 0)
     return NULL;
 
   /* Use sizes from central directory (more reliable with data descriptors) */
   uint32_t comp_sz = e->compressed_size;
   uint32_t uncomp_sz = e->uncompressed_size;
-  if (!jmevm_stream_has(&lhdr, comp_sz))
+  if (!jvm_stream_has(&lhdr, comp_sz))
     return NULL;
 
-  const uint8_t *comp_data = jmevm_stream_peek(&lhdr);
+  const uint8_t *comp_data = jvm_stream_peek(&lhdr);
 
   if (lmethod == ZIP_METHOD_STORED) {
     uint8_t *buf = (uint8_t *)malloc(comp_sz + 1);

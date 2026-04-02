@@ -1,8 +1,8 @@
-#ifndef JMEVM_CLDC_LANG_H
-#define JMEVM_CLDC_LANG_H
+#ifndef JVM_CLDC_LANG_H
+#define JVM_CLDC_LANG_H
 
-#include "jmevm.h"
+#include "nanojvm.h"
 
-void jmevm_cldc_init(jmevm_vm *vm);
+void jvm_cldc_init(jvm_vm *vm);
 
 #endif

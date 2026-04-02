@@ -57,12 +57,11 @@ static uint8_t *file_read_all(const char *path, size_t *out_len) {
 /* -------------------------------------------------------------------------
  * Classpath grow
  * ---------------------------------------------------------------------- */
-static int cp_grow(jmevm_classpath *cp) {
+static int cp_grow(jvm_classpath *cp) {
   if (cp->count < cp->cap)
     return 0;
   size_t new_cap = cp->cap ? cp->cap * 2 : 8;
-  jmevm_cp_entry *e =
-      (jmevm_cp_entry *)realloc(cp->entries, new_cap * sizeof(*e));
+  jvm_cp_entry *e = (jvm_cp_entry *)realloc(cp->entries, new_cap * sizeof(*e));
   if (!e)
     return -1;
   cp->entries = e;
@@ -70,11 +69,11 @@ static int cp_grow(jmevm_classpath *cp) {
   return 0;
 }
 
-static int cp_add_raw(jmevm_classpath *cp, jmevm_cp_kind kind, const char *path,
-                      jmevm_jar *jar) {
+static int cp_add_raw(jvm_classpath *cp, jvm_cp_kind kind, const char *path,
+                      jvm_jar *jar) {
   if (cp_grow(cp) != 0)
     return -1;
-  jmevm_cp_entry *e = &cp->entries[cp->count++];
+  jvm_cp_entry *e = &cp->entries[cp->count++];
   e->kind = kind;
   e->path = str_dup(path);
   e->jar = jar;
@@ -88,23 +87,23 @@ static int cp_add_raw(jmevm_classpath *cp, jmevm_cp_kind kind, const char *path,
 /* -------------------------------------------------------------------------
  * Public API
  * ---------------------------------------------------------------------- */
-jmevm_classpath *jmevm_classpath_create(void) {
-  return (jmevm_classpath *)calloc(1, sizeof(jmevm_classpath));
+jvm_classpath *jvm_classpath_create(void) {
+  return (jvm_classpath *)calloc(1, sizeof(jvm_classpath));
 }
 
-void jmevm_classpath_destroy(jmevm_classpath *cp) {
+void jvm_classpath_destroy(jvm_classpath *cp) {
   if (!cp)
     return;
   for (size_t i = 0; i < cp->count; i++) {
     free(cp->entries[i].path);
     if (cp->entries[i].jar)
-      jmevm_jar_close(cp->entries[i].jar);
+      jvm_jar_close(cp->entries[i].jar);
   }
   free(cp->entries);
   free(cp);
 }
 
-int jmevm_classpath_add(jmevm_classpath *cp, const char *entry) {
+int jvm_classpath_add(jvm_classpath *cp, const char *entry) {
   if (!cp || !entry || entry[0] == '\0')
     return 0;
 
@@ -136,9 +135,9 @@ int jmevm_classpath_add(jmevm_classpath *cp, const char *entry) {
       if (!full)
         continue;
       snprintf(full, plen, "%s%s%s", dir, slash, de->d_name);
-      jmevm_jar *jar = jmevm_jar_open(full);
+      jvm_jar *jar = jvm_jar_open(full);
       if (jar)
-        cp_add_raw(cp, JMEVM_CP_JAR, full, jar);
+        cp_add_raw(cp, JVM_CP_JAR, full, jar);
       free(full);
     }
     closedir(d);
@@ -148,24 +147,24 @@ int jmevm_classpath_add(jmevm_classpath *cp, const char *entry) {
 
   /* .jar or .zip file */
   if (str_ends_with(entry, ".jar") || str_ends_with(entry, ".zip")) {
-    jmevm_jar *jar = jmevm_jar_open(entry);
+    jvm_jar *jar = jvm_jar_open(entry);
     if (!jar) {
       fprintf(stderr, "[classpath] warning: could not open JAR: %s\n", entry);
       return 0;
     }
-    return cp_add_raw(cp, JMEVM_CP_JAR, entry, jar);
+    return cp_add_raw(cp, JVM_CP_JAR, entry, jar);
   }
 
   /* Single .class file */
   if (str_ends_with(entry, ".class")) {
-    return cp_add_raw(cp, JMEVM_CP_CLASS, entry, NULL);
+    return cp_add_raw(cp, JVM_CP_CLASS, entry, NULL);
   }
 
   /* Otherwise treat as a directory */
-  return cp_add_raw(cp, JMEVM_CP_DIR, entry, NULL);
+  return cp_add_raw(cp, JVM_CP_DIR, entry, NULL);
 }
 
-int jmevm_classpath_add_path(jmevm_classpath *cp, const char *path_str) {
+int jvm_classpath_add_path(jvm_classpath *cp, const char *path_str) {
   if (!cp || !path_str)
     return 0;
   char *dup = str_dup(path_str);
@@ -173,7 +172,7 @@ int jmevm_classpath_add_path(jmevm_classpath *cp, const char *path_str) {
     return -1;
   char *tok = strtok(dup, ":;");
   while (tok) {
-    jmevm_classpath_add(cp, tok);
+    jvm_classpath_add(cp, tok);
     tok = strtok(NULL, ":;");
   }
   free(dup);
@@ -203,22 +202,22 @@ static char *class_name_from_path(const char *path) {
   return name;
 }
 
-uint8_t *jmevm_classpath_find_class(const jmevm_classpath *cp,
-                                    const char *class_name, size_t *out_len) {
+uint8_t *jvm_classpath_find_class(const jvm_classpath *cp,
+                                  const char *class_name, size_t *out_len) {
   if (!cp || !class_name || !out_len)
     return NULL;
 
   for (size_t i = 0; i < cp->count; i++) {
-    const jmevm_cp_entry *e = &cp->entries[i];
+    const jvm_cp_entry *e = &cp->entries[i];
 
-    if (e->kind == JMEVM_CP_JAR && e->jar) {
-      uint8_t *buf = jmevm_jar_read_class(e->jar, class_name, out_len);
+    if (e->kind == JVM_CP_JAR && e->jar) {
+      uint8_t *buf = jvm_jar_read_class(e->jar, class_name, out_len);
       if (buf)
         return buf;
       continue;
     }
 
-    if (e->kind == JMEVM_CP_DIR) {
+    if (e->kind == JVM_CP_DIR) {
       /* Build <dir>/<class_name>.class */
       size_t dlen = strlen(e->path);
       size_t nlen = strlen(class_name);
@@ -233,7 +232,7 @@ uint8_t *jmevm_classpath_find_class(const jmevm_classpath *cp,
       continue;
     }
 
-    if (e->kind == JMEVM_CP_CLASS) {
+    if (e->kind == JVM_CP_CLASS) {
       /* Single class: check if the name matches */
       char *embedded_name = class_name_from_path(e->path);
       if (!embedded_name)

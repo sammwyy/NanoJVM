@@ -1,4 +1,4 @@
-#ifndef JMEVM_MIDP_MIDLET_H
-#define JMEVM_MIDP_MIDLET_H
+#ifndef JVM_MIDP_MIDLET_H
+#define JVM_MIDP_MIDLET_H
 
 #endif

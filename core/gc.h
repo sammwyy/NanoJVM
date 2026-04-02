@@ -1,14 +1,14 @@
-#ifndef JMEVM_CORE_GC_H
-#define JMEVM_CORE_GC_H
+#ifndef JVM_CORE_GC_H
+#define JVM_CORE_GC_H
 
 #include <stddef.h>
 #include <stdint.h>
 
-struct jmevm_vm;
+struct jvm_vm;
 
 /**
  * Runs the minimal mark & sweep garbage collector.
  */
-void jmevm_gc_run(struct jmevm_vm *vm);
+void jvm_gc_run(struct jvm_vm *vm);
 
 #endif

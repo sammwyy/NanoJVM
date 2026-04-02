@@ -1,4 +1,4 @@
-#ifndef JMEVM_MIDP_LCDUI_H
-#define JMEVM_MIDP_LCDUI_H
+#ifndef JVM_MIDP_LCDUI_H
+#define JVM_MIDP_LCDUI_H
 
 #endif

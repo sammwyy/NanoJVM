@@ -3,13 +3,13 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define JMEVM_CLASSFILE_OK 0
+#define JVM_CLASSFILE_OK 0
 
-#define JMEVM_CLASSFILE_ERR_BAD_ARGS -1
-#define JMEVM_CLASSFILE_ERR_TRUNCATED -2
-#define JMEVM_CLASSFILE_ERR_FORMAT -3
-#define JMEVM_CLASSFILE_ERR_NOMEM -4
-#define JMEVM_CLASSFILE_ERR_NO_MAIN -5
+#define JVM_CLASSFILE_ERR_BAD_ARGS -1
+#define JVM_CLASSFILE_ERR_TRUNCATED -2
+#define JVM_CLASSFILE_ERR_FORMAT -3
+#define JVM_CLASSFILE_ERR_NOMEM -4
+#define JVM_CLASSFILE_ERR_NO_MAIN -5
 
 /* Constant pool tags (JVM spec). */
 #define CONSTANT_Utf8 1
@@ -38,35 +38,35 @@ typedef struct cf_reader {
 
 static int cf_read_u1(cf_reader *r, uint8_t *out) {
   if (r == NULL || out == NULL) {
-    return JMEVM_CLASSFILE_ERR_BAD_ARGS;
+    return JVM_CLASSFILE_ERR_BAD_ARGS;
   }
   if (r->pos + 1 > r->len) {
-    return JMEVM_CLASSFILE_ERR_TRUNCATED;
+    return JVM_CLASSFILE_ERR_TRUNCATED;
   }
   *out = r->buf[r->pos++];
-  return JMEVM_CLASSFILE_OK;
+  return JVM_CLASSFILE_OK;
 }
 
 static int cf_read_u2(cf_reader *r, uint16_t *out) {
   if (r == NULL || out == NULL) {
-    return JMEVM_CLASSFILE_ERR_BAD_ARGS;
+    return JVM_CLASSFILE_ERR_BAD_ARGS;
   }
   if (r->pos + 2 > r->len) {
-    return JMEVM_CLASSFILE_ERR_TRUNCATED;
+    return JVM_CLASSFILE_ERR_TRUNCATED;
   }
   uint16_t v = (uint16_t)r->buf[r->pos] << 8;
   v |= (uint16_t)r->buf[r->pos + 1];
   r->pos += 2;
   *out = v;
-  return JMEVM_CLASSFILE_OK;
+  return JVM_CLASSFILE_OK;
 }
 
 static int cf_read_u4(cf_reader *r, uint32_t *out) {
   if (r == NULL || out == NULL) {
-    return JMEVM_CLASSFILE_ERR_BAD_ARGS;
+    return JVM_CLASSFILE_ERR_BAD_ARGS;
   }
   if (r->pos + 4 > r->len) {
-    return JMEVM_CLASSFILE_ERR_TRUNCATED;
+    return JVM_CLASSFILE_ERR_TRUNCATED;
   }
   uint32_t v = (uint32_t)r->buf[r->pos] << 24;
   v |= (uint32_t)r->buf[r->pos + 1] << 16;
@@ -74,22 +74,22 @@ static int cf_read_u4(cf_reader *r, uint32_t *out) {
   v |= (uint32_t)r->buf[r->pos + 3];
   r->pos += 4;
   *out = v;
-  return JMEVM_CLASSFILE_OK;
+  return JVM_CLASSFILE_OK;
 }
 
 static int cf_skip(cf_reader *r, size_t n) {
   if (r == NULL) {
-    return JMEVM_CLASSFILE_ERR_BAD_ARGS;
+    return JVM_CLASSFILE_ERR_BAD_ARGS;
   }
   if (r->pos + n > r->len) {
-    return JMEVM_CLASSFILE_ERR_TRUNCATED;
+    return JVM_CLASSFILE_ERR_TRUNCATED;
   }
   r->pos += n;
-  return JMEVM_CLASSFILE_OK;
+  return JVM_CLASSFILE_OK;
 }
 
-int jmevm_classfile_utf8_equals(const struct jmevm_classfile *cf,
-                                uint16_t cp_index, const char *s) {
+int jvm_classfile_utf8_equals(const struct jvm_classfile *cf, uint16_t cp_index,
+                              const char *s) {
   if (cf == NULL || s == NULL) {
     return 0;
   }
@@ -113,15 +113,15 @@ int jmevm_classfile_utf8_equals(const struct jmevm_classfile *cf,
   return memcmp(p, s, want_len) == 0;
 }
 
-static int parse_code_attribute_to_method(struct jmevm_classfile *cf,
+static int parse_code_attribute_to_method(struct jvm_classfile *cf,
                                           cf_reader *r, size_t attribute_length,
-                                          struct jmevm_method *m) {
+                                          struct jvm_method *m) {
   /* Code_attribute_length covers everything starting at max_stack. */
   if (r == NULL || cf == NULL || m == NULL) {
-    return JMEVM_CLASSFILE_ERR_BAD_ARGS;
+    return JVM_CLASSFILE_ERR_BAD_ARGS;
   }
   if (attribute_length > (r->len - r->pos)) {
-    return JMEVM_CLASSFILE_ERR_TRUNCATED;
+    return JVM_CLASSFILE_ERR_TRUNCATED;
   }
   size_t code_attr_end = r->pos + attribute_length;
 
@@ -135,20 +135,20 @@ static int parse_code_attribute_to_method(struct jmevm_classfile *cf,
   uint32_t code_length = 0;
 
   int rc = cf_read_u2(&sub, &max_stack);
-  if (rc != JMEVM_CLASSFILE_OK) {
+  if (rc != JVM_CLASSFILE_OK) {
     return rc;
   }
   rc = cf_read_u2(&sub, &max_locals);
-  if (rc != JMEVM_CLASSFILE_OK) {
+  if (rc != JVM_CLASSFILE_OK) {
     return rc;
   }
   rc = cf_read_u4(&sub, &code_length);
-  if (rc != JMEVM_CLASSFILE_OK) {
+  if (rc != JVM_CLASSFILE_OK) {
     return rc;
   }
 
   if ((size_t)code_length > code_attr_end - sub.pos) {
-    return JMEVM_CLASSFILE_ERR_TRUNCATED;
+    return JVM_CLASSFILE_ERR_TRUNCATED;
   }
   m->code = cf->buf + sub.pos;
   m->code_len = (size_t)code_length;
@@ -156,43 +156,43 @@ static int parse_code_attribute_to_method(struct jmevm_classfile *cf,
   m->max_locals = max_locals;
 
   rc = cf_skip(&sub, (size_t)code_length);
-  if (rc != JMEVM_CLASSFILE_OK) {
+  if (rc != JVM_CLASSFILE_OK) {
     return rc;
   }
 
   uint16_t exception_table_length = 0;
   rc = cf_read_u2(&sub, &exception_table_length);
-  if (rc != JMEVM_CLASSFILE_OK) {
+  if (rc != JVM_CLASSFILE_OK) {
     return rc;
   }
 
   m->exception_table_length = exception_table_length;
   if (exception_table_length > 0) {
-    m->exception_table = (struct jmevm_exception_handler *)calloc(
-        exception_table_length, sizeof(struct jmevm_exception_handler));
+    m->exception_table = (struct jvm_exception_handler *)calloc(
+        exception_table_length, sizeof(struct jvm_exception_handler));
     if (m->exception_table == NULL) {
-      return JMEVM_CLASSFILE_ERR_NOMEM;
+      return JVM_CLASSFILE_ERR_NOMEM;
     }
 
     for (uint16_t i = 0; i < exception_table_length; i++) {
       rc = cf_read_u2(&sub, &m->exception_table[i].start_pc);
-      if (rc != JMEVM_CLASSFILE_OK)
+      if (rc != JVM_CLASSFILE_OK)
         return rc;
       rc = cf_read_u2(&sub, &m->exception_table[i].end_pc);
-      if (rc != JMEVM_CLASSFILE_OK)
+      if (rc != JVM_CLASSFILE_OK)
         return rc;
       rc = cf_read_u2(&sub, &m->exception_table[i].handler_pc);
-      if (rc != JMEVM_CLASSFILE_OK)
+      if (rc != JVM_CLASSFILE_OK)
         return rc;
       rc = cf_read_u2(&sub, &m->exception_table[i].catch_type);
-      if (rc != JMEVM_CLASSFILE_OK)
+      if (rc != JVM_CLASSFILE_OK)
         return rc;
     }
   }
 
   uint16_t attributes_count = 0;
   rc = cf_read_u2(&sub, &attributes_count);
-  if (rc != JMEVM_CLASSFILE_OK) {
+  if (rc != JVM_CLASSFILE_OK) {
     return rc;
   }
 
@@ -201,16 +201,16 @@ static int parse_code_attribute_to_method(struct jmevm_classfile *cf,
     uint32_t attr_len = 0;
     (void)attr_name_index;
     rc = cf_read_u2(&sub, &attr_name_index);
-    if (rc != JMEVM_CLASSFILE_OK) {
+    if (rc != JVM_CLASSFILE_OK) {
       return rc;
     }
     rc = cf_read_u4(&sub, &attr_len);
-    if (rc != JMEVM_CLASSFILE_OK) {
+    if (rc != JVM_CLASSFILE_OK) {
       return rc;
     }
     (void)attr_name_index;
     rc = cf_skip(&sub, (size_t)attr_len);
-    if (rc != JMEVM_CLASSFILE_OK) {
+    if (rc != JVM_CLASSFILE_OK) {
       return rc;
     }
   }
@@ -218,22 +218,21 @@ static int parse_code_attribute_to_method(struct jmevm_classfile *cf,
   /* If the lengths don't line up perfectly, skip any trailing bytes. */
   if (sub.pos < code_attr_end) {
     rc = cf_skip(&sub, code_attr_end - sub.pos);
-    if (rc != JMEVM_CLASSFILE_OK) {
+    if (rc != JVM_CLASSFILE_OK) {
       return rc;
     }
   }
   r->pos = sub.pos;
-  return (sub.pos == code_attr_end) ? JMEVM_CLASSFILE_OK
-                                    : JMEVM_CLASSFILE_ERR_FORMAT;
+  return (sub.pos == code_attr_end) ? JVM_CLASSFILE_OK
+                                    : JVM_CLASSFILE_ERR_FORMAT;
 }
 
-jmevm_classfile *jmevm_classfile_load_from_buffer(const uint8_t *buf,
-                                                  size_t len) {
+jvm_classfile *jvm_classfile_load_from_buffer(const uint8_t *buf, size_t len) {
   if (buf == NULL || len < 10) {
     return NULL;
   }
 
-  struct jmevm_classfile *cf = (struct jmevm_classfile *)calloc(1, sizeof(*cf));
+  struct jvm_classfile *cf = (struct jvm_classfile *)calloc(1, sizeof(*cf));
   if (cf == NULL) {
     return NULL;
   }
@@ -250,20 +249,20 @@ jmevm_classfile *jmevm_classfile_load_from_buffer(const uint8_t *buf,
   uint16_t major = 0;
 
   int rc = cf_read_u4(&r, &magic);
-  if (rc != JMEVM_CLASSFILE_OK || magic != 0xCAFEBABE) {
-    jmevm_classfile_destroy(cf);
+  if (rc != JVM_CLASSFILE_OK || magic != 0xCAFEBABE) {
+    jvm_classfile_destroy(cf);
     return NULL;
   }
 
   /* Version is read but ignored. */
   rc = cf_read_u2(&r, &minor);
-  if (rc != JMEVM_CLASSFILE_OK) {
-    jmevm_classfile_destroy(cf);
+  if (rc != JVM_CLASSFILE_OK) {
+    jvm_classfile_destroy(cf);
     return NULL;
   }
   rc = cf_read_u2(&r, &major);
-  if (rc != JMEVM_CLASSFILE_OK) {
-    jmevm_classfile_destroy(cf);
+  if (rc != JVM_CLASSFILE_OK) {
+    jvm_classfile_destroy(cf);
     return NULL;
   }
   (void)minor;
@@ -271,8 +270,8 @@ jmevm_classfile *jmevm_classfile_load_from_buffer(const uint8_t *buf,
 
   uint16_t cp_count = 0;
   rc = cf_read_u2(&r, &cp_count);
-  if (rc != JMEVM_CLASSFILE_OK || cp_count < 1) {
-    jmevm_classfile_destroy(cf);
+  if (rc != JVM_CLASSFILE_OK || cp_count < 1) {
+    jvm_classfile_destroy(cf);
     return NULL;
   }
   cf->cp_count = cp_count;
@@ -297,15 +296,15 @@ jmevm_classfile *jmevm_classfile_load_from_buffer(const uint8_t *buf,
       cf->cp_fieldref_class_index == NULL ||
       cf->cp_fieldref_nat_index == NULL || cf->cp_string_index == NULL ||
       cf->cp_integer == NULL) {
-    jmevm_classfile_destroy(cf);
+    jvm_classfile_destroy(cf);
     return NULL;
   }
 
   for (uint16_t i = 1; i < cp_count; i++) {
     uint8_t tag = 0;
     rc = cf_read_u1(&r, &tag);
-    if (rc != JMEVM_CLASSFILE_OK) {
-      jmevm_classfile_destroy(cf);
+    if (rc != JVM_CLASSFILE_OK) {
+      jvm_classfile_destroy(cf);
       return NULL;
     }
     cf->cp_tag[i] = tag;
@@ -314,19 +313,19 @@ jmevm_classfile *jmevm_classfile_load_from_buffer(const uint8_t *buf,
     case CONSTANT_Utf8: {
       uint16_t slen = 0;
       rc = cf_read_u2(&r, &slen);
-      if (rc != JMEVM_CLASSFILE_OK) {
-        jmevm_classfile_destroy(cf);
+      if (rc != JVM_CLASSFILE_OK) {
+        jvm_classfile_destroy(cf);
         return NULL;
       }
       if (r.pos + (size_t)slen > r.len) {
-        jmevm_classfile_destroy(cf);
+        jvm_classfile_destroy(cf);
         return NULL;
       }
       cf->cp_utf8_off[i] = (uint32_t)r.pos;
       cf->cp_utf8_len[i] = slen;
       rc = cf_skip(&r, (size_t)slen);
-      if (rc != JMEVM_CLASSFILE_OK) {
-        jmevm_classfile_destroy(cf);
+      if (rc != JVM_CLASSFILE_OK) {
+        jvm_classfile_destroy(cf);
         return NULL;
       }
       break;
@@ -334,15 +333,15 @@ jmevm_classfile *jmevm_classfile_load_from_buffer(const uint8_t *buf,
     case CONSTANT_Class:
       /* u2 name_index */
       rc = cf_read_u2(&r, &cf->cp_class_name_index[i]);
-      if (rc != JMEVM_CLASSFILE_OK) {
-        jmevm_classfile_destroy(cf);
+      if (rc != JVM_CLASSFILE_OK) {
+        jvm_classfile_destroy(cf);
         return NULL;
       }
       break;
     case CONSTANT_String:
       rc = cf_read_u2(&r, &cf->cp_string_index[i]);
-      if (rc != JMEVM_CLASSFILE_OK) {
-        jmevm_classfile_destroy(cf);
+      if (rc != JVM_CLASSFILE_OK) {
+        jvm_classfile_destroy(cf);
         return NULL;
       }
       break;
@@ -350,13 +349,13 @@ jmevm_classfile *jmevm_classfile_load_from_buffer(const uint8_t *buf,
     case CONSTANT_NameAndType:
       /* u2 name_index, u2 descriptor_index */
       rc = cf_read_u2(&r, &cf->cp_nat_name_index[i]);
-      if (rc != JMEVM_CLASSFILE_OK) {
-        jmevm_classfile_destroy(cf);
+      if (rc != JVM_CLASSFILE_OK) {
+        jvm_classfile_destroy(cf);
         return NULL;
       }
       rc = cf_read_u2(&r, &cf->cp_nat_desc_index[i]);
-      if (rc != JMEVM_CLASSFILE_OK) {
-        jmevm_classfile_destroy(cf);
+      if (rc != JVM_CLASSFILE_OK) {
+        jvm_classfile_destroy(cf);
         return NULL;
       }
       break;
@@ -367,13 +366,13 @@ jmevm_classfile *jmevm_classfile_load_from_buffer(const uint8_t *buf,
       uint16_t class_index = 0;
       uint16_t nat_index = 0;
       rc = cf_read_u2(&r, &class_index);
-      if (rc != JMEVM_CLASSFILE_OK) {
-        jmevm_classfile_destroy(cf);
+      if (rc != JVM_CLASSFILE_OK) {
+        jvm_classfile_destroy(cf);
         return NULL;
       }
       rc = cf_read_u2(&r, &nat_index);
-      if (rc != JMEVM_CLASSFILE_OK) {
-        jmevm_classfile_destroy(cf);
+      if (rc != JVM_CLASSFILE_OK) {
+        jvm_classfile_destroy(cf);
         return NULL;
       }
       cf->cp_methodref_class_index[i] = class_index;
@@ -385,13 +384,13 @@ jmevm_classfile *jmevm_classfile_load_from_buffer(const uint8_t *buf,
       uint16_t class_index = 0;
       uint16_t nat_index = 0;
       rc = cf_read_u2(&r, &class_index);
-      if (rc != JMEVM_CLASSFILE_OK) {
-        jmevm_classfile_destroy(cf);
+      if (rc != JVM_CLASSFILE_OK) {
+        jvm_classfile_destroy(cf);
         return NULL;
       }
       rc = cf_read_u2(&r, &nat_index);
-      if (rc != JMEVM_CLASSFILE_OK) {
-        jmevm_classfile_destroy(cf);
+      if (rc != JVM_CLASSFILE_OK) {
+        jvm_classfile_destroy(cf);
         return NULL;
       }
       cf->cp_fieldref_class_index[i] = class_index;
@@ -401,8 +400,8 @@ jmevm_classfile *jmevm_classfile_load_from_buffer(const uint8_t *buf,
     case CONSTANT_Dynamic:
     case CONSTANT_InvokeDynamic:
       rc = cf_skip(&r, 4);
-      if (rc != JMEVM_CLASSFILE_OK) {
-        jmevm_classfile_destroy(cf);
+      if (rc != JVM_CLASSFILE_OK) {
+        jvm_classfile_destroy(cf);
         return NULL;
       }
       break;
@@ -410,8 +409,8 @@ jmevm_classfile *jmevm_classfile_load_from_buffer(const uint8_t *buf,
     case CONSTANT_MethodType:
       /* u2 descriptor_index */
       rc = cf_skip(&r, 2);
-      if (rc != JMEVM_CLASSFILE_OK) {
-        jmevm_classfile_destroy(cf);
+      if (rc != JVM_CLASSFILE_OK) {
+        jvm_classfile_destroy(cf);
         return NULL;
       }
       break;
@@ -419,8 +418,8 @@ jmevm_classfile *jmevm_classfile_load_from_buffer(const uint8_t *buf,
     case CONSTANT_MethodHandle: {
       /* u1 reference_kind + u2 reference_index */
       rc = cf_skip(&r, 3);
-      if (rc != JMEVM_CLASSFILE_OK) {
-        jmevm_classfile_destroy(cf);
+      if (rc != JVM_CLASSFILE_OK) {
+        jvm_classfile_destroy(cf);
         return NULL;
       }
       break;
@@ -428,15 +427,15 @@ jmevm_classfile *jmevm_classfile_load_from_buffer(const uint8_t *buf,
 
     case CONSTANT_Integer:
       rc = cf_read_u4(&r, (uint32_t *)&cf->cp_integer[i]);
-      if (rc != JMEVM_CLASSFILE_OK) {
-        jmevm_classfile_destroy(cf);
+      if (rc != JVM_CLASSFILE_OK) {
+        jvm_classfile_destroy(cf);
         return NULL;
       }
       break;
     case CONSTANT_Float:
       rc = cf_skip(&r, 4);
-      if (rc != JMEVM_CLASSFILE_OK) {
-        jmevm_classfile_destroy(cf);
+      if (rc != JVM_CLASSFILE_OK) {
+        jvm_classfile_destroy(cf);
         return NULL;
       }
       break;
@@ -444,13 +443,13 @@ jmevm_classfile *jmevm_classfile_load_from_buffer(const uint8_t *buf,
     case CONSTANT_Long:
     case CONSTANT_Double:
       rc = cf_skip(&r, 8);
-      if (rc != JMEVM_CLASSFILE_OK) {
-        jmevm_classfile_destroy(cf);
+      if (rc != JVM_CLASSFILE_OK) {
+        jvm_classfile_destroy(cf);
         return NULL;
       }
       /* These take up two constant pool entries. */
       if (i + 1 >= cp_count) {
-        jmevm_classfile_destroy(cf);
+        jvm_classfile_destroy(cf);
         return NULL;
       }
       i++;
@@ -459,8 +458,8 @@ jmevm_classfile *jmevm_classfile_load_from_buffer(const uint8_t *buf,
     case CONSTANT_Module:
     case CONSTANT_Package:
       rc = cf_skip(&r, 2);
-      if (rc != JMEVM_CLASSFILE_OK) {
-        jmevm_classfile_destroy(cf);
+      if (rc != JVM_CLASSFILE_OK) {
+        jvm_classfile_destroy(cf);
         return NULL;
       }
       break;
@@ -468,27 +467,27 @@ jmevm_classfile *jmevm_classfile_load_from_buffer(const uint8_t *buf,
     default:
       /* For minimal viability, fail gracefully if we can't parse the constant
        * pool. */
-      jmevm_classfile_destroy(cf);
+      jvm_classfile_destroy(cf);
       return NULL;
     }
   }
 
   /* access_flags, this_class, super_class */
   rc = cf_skip(&r, 2);
-  if (rc != JMEVM_CLASSFILE_OK) {
-    jmevm_classfile_destroy(cf);
+  if (rc != JVM_CLASSFILE_OK) {
+    jvm_classfile_destroy(cf);
     return NULL;
   }
   uint16_t this_class_index = 0;
   rc = cf_read_u2(&r, &this_class_index);
-  if (rc != JMEVM_CLASSFILE_OK) {
-    jmevm_classfile_destroy(cf);
+  if (rc != JVM_CLASSFILE_OK) {
+    jvm_classfile_destroy(cf);
     return NULL;
   }
   uint16_t super_class_index = 0;
   rc = cf_read_u2(&r, &super_class_index);
-  if (rc != JMEVM_CLASSFILE_OK) {
-    jmevm_classfile_destroy(cf);
+  if (rc != JVM_CLASSFILE_OK) {
+    jvm_classfile_destroy(cf);
     return NULL;
   }
   cf->this_class_name_cp_index =
@@ -499,49 +498,48 @@ jmevm_classfile *jmevm_classfile_load_from_buffer(const uint8_t *buf,
   /* interfaces */
   uint16_t interfaces_count = 0;
   rc = cf_read_u2(&r, &interfaces_count);
-  if (rc != JMEVM_CLASSFILE_OK) {
-    jmevm_classfile_destroy(cf);
+  if (rc != JVM_CLASSFILE_OK) {
+    jvm_classfile_destroy(cf);
     return NULL;
   }
   rc = cf_skip(&r, (size_t)interfaces_count * 2u);
-  if (rc != JMEVM_CLASSFILE_OK) {
-    jmevm_classfile_destroy(cf);
+  if (rc != JVM_CLASSFILE_OK) {
+    jvm_classfile_destroy(cf);
     return NULL;
   }
 
   /* fields */
   uint16_t fields_count = 0;
   rc = cf_read_u2(&r, &fields_count);
-  if (rc != JMEVM_CLASSFILE_OK) {
-    jmevm_classfile_destroy(cf);
+  if (rc != JVM_CLASSFILE_OK) {
+    jvm_classfile_destroy(cf);
     return NULL;
   }
   cf->fields_count = fields_count;
   if (fields_count > 0) {
-    cf->fields =
-        (struct jmevm_field *)calloc(fields_count, sizeof(*cf->fields));
+    cf->fields = (struct jvm_field *)calloc(fields_count, sizeof(*cf->fields));
     if (cf->fields == NULL) {
-      jmevm_classfile_destroy(cf);
+      jvm_classfile_destroy(cf);
       return NULL;
     }
   }
   for (uint16_t i = 0; i < fields_count; i++) {
     /* access_flags */
     rc = cf_skip(&r, 2);
-    if (rc != JMEVM_CLASSFILE_OK) {
-      jmevm_classfile_destroy(cf);
+    if (rc != JVM_CLASSFILE_OK) {
+      jvm_classfile_destroy(cf);
       return NULL;
     }
     uint16_t name_index = 0;
     uint16_t descriptor_index = 0;
     rc = cf_read_u2(&r, &name_index);
-    if (rc != JMEVM_CLASSFILE_OK) {
-      jmevm_classfile_destroy(cf);
+    if (rc != JVM_CLASSFILE_OK) {
+      jvm_classfile_destroy(cf);
       return NULL;
     }
     rc = cf_read_u2(&r, &descriptor_index);
-    if (rc != JMEVM_CLASSFILE_OK) {
-      jmevm_classfile_destroy(cf);
+    if (rc != JVM_CLASSFILE_OK) {
+      jvm_classfile_destroy(cf);
       return NULL;
     }
     cf->fields[i].name_cp_index = name_index;
@@ -549,26 +547,26 @@ jmevm_classfile *jmevm_classfile_load_from_buffer(const uint8_t *buf,
 
     uint16_t attributes_count = 0;
     rc = cf_read_u2(&r, &attributes_count);
-    if (rc != JMEVM_CLASSFILE_OK) {
-      jmevm_classfile_destroy(cf);
+    if (rc != JVM_CLASSFILE_OK) {
+      jvm_classfile_destroy(cf);
       return NULL;
     }
     for (uint16_t j = 0; j < attributes_count; j++) {
       uint16_t attribute_name_index = 0;
       uint32_t attribute_length = 0;
       rc = cf_read_u2(&r, &attribute_name_index);
-      if (rc != JMEVM_CLASSFILE_OK) {
-        jmevm_classfile_destroy(cf);
+      if (rc != JVM_CLASSFILE_OK) {
+        jvm_classfile_destroy(cf);
         return NULL;
       }
       rc = cf_read_u4(&r, &attribute_length);
-      if (rc != JMEVM_CLASSFILE_OK) {
-        jmevm_classfile_destroy(cf);
+      if (rc != JVM_CLASSFILE_OK) {
+        jvm_classfile_destroy(cf);
         return NULL;
       }
       rc = cf_skip(&r, (size_t)attribute_length);
-      if (rc != JMEVM_CLASSFILE_OK) {
-        jmevm_classfile_destroy(cf);
+      if (rc != JVM_CLASSFILE_OK) {
+        jvm_classfile_destroy(cf);
         return NULL;
       }
     }
@@ -577,17 +575,17 @@ jmevm_classfile *jmevm_classfile_load_from_buffer(const uint8_t *buf,
   /* methods */
   uint16_t methods_count = 0;
   rc = cf_read_u2(&r, &methods_count);
-  if (rc != JMEVM_CLASSFILE_OK) {
-    jmevm_classfile_destroy(cf);
+  if (rc != JVM_CLASSFILE_OK) {
+    jvm_classfile_destroy(cf);
     return NULL;
   }
 
   cf->methods_count = methods_count;
   if (methods_count > 0) {
     cf->methods =
-        (struct jmevm_method *)calloc(methods_count, sizeof(*cf->methods));
+        (struct jvm_method *)calloc(methods_count, sizeof(*cf->methods));
     if (cf->methods == NULL) {
-      jmevm_classfile_destroy(cf);
+      jvm_classfile_destroy(cf);
       return NULL;
     }
   }
@@ -599,62 +597,61 @@ jmevm_classfile *jmevm_classfile_load_from_buffer(const uint8_t *buf,
   for (uint16_t i = 0; i < methods_count; i++) {
     /* access_flags */
     rc = cf_skip(&r, 2);
-    if (rc != JMEVM_CLASSFILE_OK) {
-      jmevm_classfile_destroy(cf);
+    if (rc != JVM_CLASSFILE_OK) {
+      jvm_classfile_destroy(cf);
       return NULL;
     }
 
     uint16_t name_index = 0;
     uint16_t descriptor_index = 0;
     rc = cf_read_u2(&r, &name_index);
-    if (rc != JMEVM_CLASSFILE_OK) {
-      jmevm_classfile_destroy(cf);
+    if (rc != JVM_CLASSFILE_OK) {
+      jvm_classfile_destroy(cf);
       return NULL;
     }
     rc = cf_read_u2(&r, &descriptor_index);
-    if (rc != JMEVM_CLASSFILE_OK) {
-      jmevm_classfile_destroy(cf);
+    if (rc != JVM_CLASSFILE_OK) {
+      jvm_classfile_destroy(cf);
       return NULL;
     }
 
     uint16_t attributes_count = 0;
     rc = cf_read_u2(&r, &attributes_count);
-    if (rc != JMEVM_CLASSFILE_OK) {
-      jmevm_classfile_destroy(cf);
+    if (rc != JVM_CLASSFILE_OK) {
+      jvm_classfile_destroy(cf);
       return NULL;
     }
 
-    struct jmevm_method *m = cf->methods ? &cf->methods[i] : NULL;
+    struct jvm_method *m = cf->methods ? &cf->methods[i] : NULL;
     if (m != NULL) {
       m->name_cp_index = name_index;
       m->descriptor_cp_index = descriptor_index;
     }
 
-    int is_main = jmevm_classfile_utf8_equals(cf, name_index, main_name) &&
-                  jmevm_classfile_utf8_equals(cf, descriptor_index, main_desc);
+    int is_main = jvm_classfile_utf8_equals(cf, name_index, main_name) &&
+                  jvm_classfile_utf8_equals(cf, descriptor_index, main_desc);
 
     for (uint16_t j = 0; j < attributes_count; j++) {
       uint16_t attribute_name_index = 0;
       uint32_t attribute_length = 0;
 
       rc = cf_read_u2(&r, &attribute_name_index);
-      if (rc != JMEVM_CLASSFILE_OK) {
-        jmevm_classfile_destroy(cf);
+      if (rc != JVM_CLASSFILE_OK) {
+        jvm_classfile_destroy(cf);
         return NULL;
       }
       rc = cf_read_u4(&r, &attribute_length);
-      if (rc != JMEVM_CLASSFILE_OK) {
-        jmevm_classfile_destroy(cf);
+      if (rc != JVM_CLASSFILE_OK) {
+        jvm_classfile_destroy(cf);
         return NULL;
       }
 
-      if (jmevm_classfile_utf8_equals(cf, attribute_name_index,
-                                      code_attr_name) &&
+      if (jvm_classfile_utf8_equals(cf, attribute_name_index, code_attr_name) &&
           m != NULL && m->code == NULL) {
         rc =
             parse_code_attribute_to_method(cf, &r, (size_t)attribute_length, m);
-        if (rc != JMEVM_CLASSFILE_OK) {
-          jmevm_classfile_destroy(cf);
+        if (rc != JVM_CLASSFILE_OK) {
+          jvm_classfile_destroy(cf);
           return NULL;
         }
         if (is_main && cf->main_code == NULL) {
@@ -666,8 +663,8 @@ jmevm_classfile *jmevm_classfile_load_from_buffer(const uint8_t *buf,
         }
       } else {
         rc = cf_skip(&r, (size_t)attribute_length);
-        if (rc != JMEVM_CLASSFILE_OK) {
-          jmevm_classfile_destroy(cf);
+        if (rc != JVM_CLASSFILE_OK) {
+          jvm_classfile_destroy(cf);
           return NULL;
         }
       }
@@ -677,7 +674,7 @@ jmevm_classfile *jmevm_classfile_load_from_buffer(const uint8_t *buf,
   return cf;
 }
 
-void jmevm_classfile_destroy(jmevm_classfile *cf) {
+void jvm_classfile_destroy(jvm_classfile *cf) {
   if (cf == NULL) {
     return;
   }
@@ -704,15 +701,15 @@ void jmevm_classfile_destroy(jmevm_classfile *cf) {
   free(cf);
 }
 
-const struct jmevm_method *
-jmevm_classfile_lookup_method(const struct jmevm_classfile *cf,
-                              uint16_t name_cp_index,
-                              uint16_t descriptor_cp_index) {
+const struct jvm_method *
+jvm_classfile_lookup_method(const struct jvm_classfile *cf,
+                            uint16_t name_cp_index,
+                            uint16_t descriptor_cp_index) {
   if (cf == NULL || cf->methods == NULL || cf->methods_count == 0) {
     return NULL;
   }
   for (uint16_t i = 0; i < cf->methods_count; i++) {
-    const struct jmevm_method *m = &cf->methods[i];
+    const struct jvm_method *m = &cf->methods[i];
     if (m->name_cp_index == name_cp_index &&
         m->descriptor_cp_index == descriptor_cp_index) {
       return m;
@@ -721,76 +718,75 @@ jmevm_classfile_lookup_method(const struct jmevm_classfile *cf,
   return NULL;
 }
 
-int jmevm_classfile_extract_main(const jmevm_classfile *cf,
-                                 jmevm_main_method *out) {
+int jvm_classfile_extract_main(const jvm_classfile *cf, jvm_main_method *out) {
   if (cf == NULL || out == NULL) {
-    return JMEVM_CLASSFILE_ERR_BAD_ARGS;
+    return JVM_CLASSFILE_ERR_BAD_ARGS;
   }
   if (!cf->has_main || cf->main_code == NULL || cf->main_code_len == 0) {
-    return JMEVM_CLASSFILE_ERR_NO_MAIN;
+    return JVM_CLASSFILE_ERR_NO_MAIN;
   }
 
   out->code = cf->main_code;
   out->code_len = cf->main_code_len;
   out->max_stack = cf->main_max_stack;
   out->max_locals = cf->main_max_locals;
-  return JMEVM_CLASSFILE_OK;
+  return JVM_CLASSFILE_OK;
 }
 
-int jmevm_classfile_execute_main(jmevm_vm *vm, const uint8_t *buf, size_t len) {
+int jvm_classfile_execute_main(jvm_vm *vm, const uint8_t *buf, size_t len) {
   if (vm == NULL || buf == NULL || len == 0) {
-    return JMEVM_CLASSFILE_ERR_BAD_ARGS;
+    return JVM_CLASSFILE_ERR_BAD_ARGS;
   }
 
-  struct jmevm_classfile *cf = jmevm_classfile_load_from_buffer(buf, len);
+  struct jvm_classfile *cf = jvm_classfile_load_from_buffer(buf, len);
   if (cf == NULL) {
-    return JMEVM_CLASSFILE_ERR_NO_MAIN;
+    return JVM_CLASSFILE_ERR_NO_MAIN;
   }
 
-  jmevm_main_method m;
-  int rc = jmevm_classfile_extract_main(cf, &m);
-  if (rc != JMEVM_CLASSFILE_OK) {
-    jmevm_classfile_destroy(cf);
+  jvm_main_method m;
+  int rc = jvm_classfile_extract_main(cf, &m);
+  if (rc != JVM_CLASSFILE_OK) {
+    jvm_classfile_destroy(cf);
     return rc;
   }
 
   int run_rc =
-      jmevm_vm_run(vm, cf, m.code, m.code_len, m.max_locals, m.max_stack);
-  jmevm_classfile_destroy(cf);
+      jvm_vm_run(vm, cf, m.code, m.code_len, m.max_locals, m.max_stack);
+  jvm_classfile_destroy(cf);
   return run_rc;
 }
 
-const struct jmevm_method *
-jmevm_classfile_resolve_method(const struct jmevm_classfile *cf,
-                               const char *name, const char *descriptor) {
+const struct jvm_method *
+jvm_classfile_resolve_method(const struct jvm_classfile *cf, const char *name,
+                             const char *descriptor) {
   if (cf == NULL || name == NULL || descriptor == NULL)
     return NULL;
   for (uint16_t i = 0; i < cf->methods_count; i++) {
-    if (jmevm_classfile_utf8_equals(cf, cf->methods[i].name_cp_index, name) &&
-        jmevm_classfile_utf8_equals(cf, cf->methods[i].descriptor_cp_index,
-                                    descriptor)) {
+    if (jvm_classfile_utf8_equals(cf, cf->methods[i].name_cp_index, name) &&
+        jvm_classfile_utf8_equals(cf, cf->methods[i].descriptor_cp_index,
+                                  descriptor)) {
       return &cf->methods[i];
     }
   }
   return NULL;
 }
 
-int jmevm_classfile_resolve_field(const struct jmevm_classfile *cf,
-                                  const char *name, const char *descriptor) {
+int jvm_classfile_resolve_field(const struct jvm_classfile *cf,
+                                const char *name, const char *descriptor) {
   if (cf == NULL || name == NULL || descriptor == NULL)
     return -1;
   for (uint16_t i = 0; i < cf->fields_count; i++) {
-    if (jmevm_classfile_utf8_equals(cf, cf->fields[i].name_cp_index, name) &&
-        jmevm_classfile_utf8_equals(cf, cf->fields[i].descriptor_cp_index,
-                                    descriptor)) {
+    if (jvm_classfile_utf8_equals(cf, cf->fields[i].name_cp_index, name) &&
+        jvm_classfile_utf8_equals(cf, cf->fields[i].descriptor_cp_index,
+                                  descriptor)) {
       return (int)i;
     }
   }
   return -1;
 }
 
-char *jmevm_classfile_get_utf8_copy(const struct jmevm_classfile *cf,
-                                    uint16_t cp_index) {
+char *jvm_classfile_get_utf8_copy(const struct jvm_classfile *cf,
+                                  uint16_t cp_index) {
   if (cf == NULL || cp_index == 0 || cp_index >= cf->cp_count)
     return NULL;
   if (cf->cp_tag[cp_index] != CONSTANT_Utf8)
