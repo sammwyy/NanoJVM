@@ -36,4 +36,30 @@
 #define JMEVM_OP_GETFIELD 0xb4
 #define JMEVM_OP_PUTFIELD 0xb5
 
+#define JMEVM_OP_BIPUSH 0x10
+#define JMEVM_OP_SIPUSH 0x11
+#define JMEVM_OP_LDC 0x12
+
+#define JMEVM_OP_ALOAD 0x19
+#define JMEVM_OP_ALOAD_0 0x2a
+#define JMEVM_OP_ALOAD_1 0x2b
+#define JMEVM_OP_ALOAD_2 0x2c
+#define JMEVM_OP_ALOAD_3 0x2d
+
+#define JMEVM_OP_ASTORE 0x3a
+#define JMEVM_OP_ASTORE_0 0x4b
+#define JMEVM_OP_ASTORE_1 0x4c
+#define JMEVM_OP_ASTORE_2 0x4d
+#define JMEVM_OP_ASTORE_3 0x4e
+
+#define JMEVM_OP_IALOAD 0x2e
+#define JMEVM_OP_BALOAD 0x33
+
+#define JMEVM_OP_IASTORE 0x4f
+#define JMEVM_OP_BASTORE 0x54
+
+#define JMEVM_OP_ARRAYLENGTH 0xbe
+
+#define JMEVM_OP_NEWARRAY 0xbc
+
 #endif

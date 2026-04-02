@@ -47,6 +47,8 @@ static int frame_pop(jmevm_frame *f, int32_t *out) {
 #define CONSTANT_Methodref 10
 #define CONSTANT_InterfaceMethodref 11
 #define CONSTANT_Fieldref 9
+#define CONSTANT_Integer 3
+#define CONSTANT_String 8
 #define CONSTANT_Utf8 1
 
 static int parse_descriptor_minimal_i32_void(const uint8_t *desc,
@@ -67,12 +69,23 @@ static int parse_descriptor_minimal_i32_void(const uint8_t *desc,
   uint16_t param_count = 0;
   size_t pos = 1;
   while (pos < desc_len && desc[pos] != ')') {
-    if (desc[pos] != 'I') {
-      /* Only int parameters are supported. */
+    if (desc[pos] == 'I') {
+      param_count++;
+      pos++;
+    } else if (desc[pos] == 'L') {
+      /* Simplified: assume L...; is a reference, push as i32. */
+      while (pos < desc_len && desc[pos] != ';') {
+        pos++;
+      }
+      if (pos >= desc_len) {
+        return JMEVM_ERR_BAD_ARGS;
+      }
+      pos++; /* consume ';' */
+      param_count++;
+    } else {
+      /* Only int and String parameters are supported in this minimal VM. */
       return JMEVM_ERR_BAD_ARGS;
     }
-    param_count++;
-    pos++;
     if (param_count > JMEVM_MAX_LOCALS) {
       return JMEVM_ERR_BAD_ARGS;
     }
@@ -381,6 +394,27 @@ static int vm_exec(struct jmevm_vm *vm) {
       }
       break;
 
+    case JMEVM_OP_BIPUSH: {
+      if (f->pc >= f->code_len)
+        return JMEVM_ERR_TRUNCATED;
+      int8_t v = (int8_t)f->code[f->pc++];
+      rc = frame_push(f, (int32_t)v);
+      if (rc != JMEVM_OK)
+        return rc;
+      break;
+    }
+    case JMEVM_OP_SIPUSH: {
+      if (f->pc + 1 >= f->code_len)
+        return JMEVM_ERR_TRUNCATED;
+      int16_t v = ((int16_t)f->code[f->pc] << 8) | (int16_t)f->code[f->pc + 1];
+      f->pc += 2;
+      rc = frame_push(f, (int32_t)v);
+      if (rc != JMEVM_OK)
+        return rc;
+      break;
+    }
+
+    case JMEVM_OP_ALOAD:
     case JMEVM_OP_ILOAD: {
       if (f->pc >= f->code_len) {
         return JMEVM_ERR_TRUNCATED;
@@ -395,6 +429,7 @@ static int vm_exec(struct jmevm_vm *vm) {
       }
       break;
     }
+    case JMEVM_OP_ALOAD_0:
     case JMEVM_OP_ILOAD_0:
       if (f->max_locals < 1) {
         return JMEVM_ERR_LOCAL_BOUNDS;
@@ -404,6 +439,7 @@ static int vm_exec(struct jmevm_vm *vm) {
         return rc;
       }
       break;
+    case JMEVM_OP_ALOAD_1:
     case JMEVM_OP_ILOAD_1:
       if (f->max_locals < 2) {
         return JMEVM_ERR_LOCAL_BOUNDS;
@@ -413,6 +449,7 @@ static int vm_exec(struct jmevm_vm *vm) {
         return rc;
       }
       break;
+    case JMEVM_OP_ALOAD_2:
     case JMEVM_OP_ILOAD_2:
       if (f->max_locals < 3) {
         return JMEVM_ERR_LOCAL_BOUNDS;
@@ -422,6 +459,7 @@ static int vm_exec(struct jmevm_vm *vm) {
         return rc;
       }
       break;
+    case JMEVM_OP_ALOAD_3:
     case JMEVM_OP_ILOAD_3:
       if (f->max_locals < 4) {
         return JMEVM_ERR_LOCAL_BOUNDS;
@@ -432,6 +470,7 @@ static int vm_exec(struct jmevm_vm *vm) {
       }
       break;
 
+    case JMEVM_OP_ASTORE:
     case JMEVM_OP_ISTORE: {
       if (f->pc >= f->code_len) {
         return JMEVM_ERR_TRUNCATED;
@@ -448,6 +487,7 @@ static int vm_exec(struct jmevm_vm *vm) {
       f->locals[idx] = v;
       break;
     }
+    case JMEVM_OP_ASTORE_0:
     case JMEVM_OP_ISTORE_0: {
       if (f->max_locals < 1) {
         return JMEVM_ERR_LOCAL_BOUNDS;
@@ -460,6 +500,7 @@ static int vm_exec(struct jmevm_vm *vm) {
       f->locals[0] = v;
       break;
     }
+    case JMEVM_OP_ASTORE_1:
     case JMEVM_OP_ISTORE_1: {
       if (f->max_locals < 2) {
         return JMEVM_ERR_LOCAL_BOUNDS;
@@ -472,6 +513,7 @@ static int vm_exec(struct jmevm_vm *vm) {
       f->locals[1] = v;
       break;
     }
+    case JMEVM_OP_ASTORE_2:
     case JMEVM_OP_ISTORE_2: {
       if (f->max_locals < 3) {
         return JMEVM_ERR_LOCAL_BOUNDS;
@@ -484,6 +526,7 @@ static int vm_exec(struct jmevm_vm *vm) {
       f->locals[2] = v;
       break;
     }
+    case JMEVM_OP_ASTORE_3:
     case JMEVM_OP_ISTORE_3: {
       if (f->max_locals < 4) {
         return JMEVM_ERR_LOCAL_BOUNDS;
@@ -770,6 +813,122 @@ static int vm_exec(struct jmevm_vm *vm) {
         return JMEVM_ERR_BAD_ARGS;
 
       jmevm_object_put_field(obj_ref, (uint16_t)field_index, val);
+      break;
+    }
+
+    case JMEVM_OP_LDC: {
+      if (f->pc >= f->code_len)
+        return JMEVM_ERR_TRUNCATED;
+      uint8_t cp_idx = f->code[f->pc++];
+      uint8_t tag = vm->cf->cp_tag[cp_idx];
+      if (tag == CONSTANT_Integer) {
+        rc = frame_push(f, vm->cf->cp_integer[cp_idx]);
+        if (rc != JMEVM_OK)
+          return rc;
+      } else if (tag == CONSTANT_String) {
+        uint16_t utf8_idx = vm->cf->cp_string_index[cp_idx];
+        char *s = jmevm_classfile_get_utf8_copy(vm->cf, utf8_idx);
+        int32_t slen = (int32_t)strlen(s);
+        int32_t barry_ref = jmevm_heap_alloc_array(JMEVM_OBJ_ARRAY_BYTE, slen);
+        for (int32_t i = 0; i < slen; i++) {
+          jmevm_array_store_byte(barry_ref, i, (int8_t)s[i]);
+        }
+        free(s);
+        int32_t string_ref = jmevm_heap_alloc(NULL);
+        jmevm_object_put_field(string_ref, 0, barry_ref);
+        jmevm_object_put_field(string_ref, 1, slen);
+        rc = frame_push(f, string_ref);
+        if (rc != JMEVM_OK)
+          return rc;
+      }
+      break;
+    }
+
+    case JMEVM_OP_NEWARRAY: {
+      if (f->pc >= f->code_len)
+        return JMEVM_ERR_TRUNCATED;
+      uint8_t atype = f->code[f->pc++];
+      int32_t length;
+      rc = frame_pop(f, &length);
+      if (rc != JMEVM_OK)
+        return rc;
+      jmevm_obj_type type =
+          (atype == 10) ? JMEVM_OBJ_ARRAY_INT : JMEVM_OBJ_ARRAY_BYTE;
+      int32_t array_ref = jmevm_heap_alloc_array(type, length);
+      rc = frame_push(f, array_ref);
+      if (rc != JMEVM_OK)
+        return rc;
+      break;
+    }
+
+    case JMEVM_OP_ARRAYLENGTH: {
+      int32_t array_ref;
+      rc = frame_pop(f, &array_ref);
+      if (rc != JMEVM_OK)
+        return rc;
+      if (array_ref == 0)
+        return JMEVM_ERR_BAD_ARGS;
+      rc = frame_push(f, jmevm_array_length(array_ref));
+      if (rc != JMEVM_OK)
+        return rc;
+      break;
+    }
+
+    case JMEVM_OP_IALOAD: {
+      int32_t index, array_ref;
+      rc = frame_pop(f, &index);
+      if (rc != JMEVM_OK)
+        return rc;
+      rc = frame_pop(f, &array_ref);
+      if (rc != JMEVM_OK)
+        return rc;
+      rc = frame_push(f, jmevm_array_load_int(array_ref, index));
+      if (rc != JMEVM_OK)
+        return rc;
+      break;
+    }
+
+    case JMEVM_OP_IASTORE: {
+      int32_t value, index, array_ref;
+      rc = frame_pop(f, &value);
+      if (rc != JMEVM_OK)
+        return rc;
+      rc = frame_pop(f, &index);
+      if (rc != JMEVM_OK)
+        return rc;
+      rc = frame_pop(f, &array_ref);
+      if (rc != JMEVM_OK)
+        return rc;
+      jmevm_array_store_int(array_ref, index, value);
+      break;
+    }
+
+    case JMEVM_OP_BALOAD: {
+      int32_t index, array_ref;
+      rc = frame_pop(f, &index);
+      if (rc != JMEVM_OK)
+        return rc;
+      rc = frame_pop(f, &array_ref);
+      if (rc != JMEVM_OK)
+        return rc;
+      rc = frame_push(f, (int32_t)jmevm_array_load_byte(array_ref, index));
+      if (rc != JMEVM_OK)
+        return rc;
+      break;
+    }
+
+    case JMEVM_OP_BASTORE: {
+      int32_t value, index, array_ref;
+      rc = frame_pop(f, &value);
+      if (rc != JMEVM_OK)
+        return rc;
+      rc = frame_pop(f, &index);
+      if (rc != JMEVM_OK)
+        return rc;
+      rc = frame_pop(f, &array_ref);
+      if (rc != JMEVM_OK)
+        return rc;
+      jmevm_array_store_byte(array_ref, index, (int8_t)value);
       break;
     }
 

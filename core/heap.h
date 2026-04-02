@@ -9,9 +9,21 @@ struct jmevm_classfile;
 /**
  * Minimal object representation.
  */
+typedef enum {
+  JMEVM_OBJ_CLASS = 0,
+  JMEVM_OBJ_ARRAY_INT,
+  JMEVM_OBJ_ARRAY_BYTE,
+} jmevm_obj_type;
+
+/**
+ * Minimal object representation.
+ */
 typedef struct jmevm_object {
+  jmevm_obj_type type;
   const struct jmevm_classfile *cf;
   int32_t *fields;
+  int32_t length;
+  void *data;
 } jmevm_object;
 
 /**
@@ -30,6 +42,24 @@ int32_t jmevm_heap_alloc(const struct jmevm_classfile *cf);
 int32_t jmevm_object_get_field(int32_t obj_ref, uint16_t field_index);
 void jmevm_object_put_field(int32_t obj_ref, uint16_t field_index,
                             int32_t value);
+
+/**
+ * Allocates a new array on the heap.
+ */
+int32_t jmevm_heap_alloc_array(jmevm_obj_type type, int32_t length);
+
+/**
+ * Gets the length of an array.
+ */
+int32_t jmevm_array_length(int32_t array_ref);
+
+/**
+ * Array access routines.
+ */
+int32_t jmevm_array_load_int(int32_t array_ref, int32_t index);
+void jmevm_array_store_int(int32_t array_ref, int32_t index, int32_t value);
+int8_t jmevm_array_load_byte(int32_t array_ref, int32_t index);
+void jmevm_array_store_byte(int32_t array_ref, int32_t index, int8_t value);
 
 /**
  * Gets the classfile for the given object reference.

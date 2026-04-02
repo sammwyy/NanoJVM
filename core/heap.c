@@ -26,27 +26,91 @@ int32_t jmevm_heap_alloc(const struct jmevm_classfile *cf) {
     return 0;
   }
 
-  if (next_field + cf->fields_count > MAX_FIELDS) {
+  uint16_t fields_count = cf ? cf->fields_count : 2; // For String/special cases
+  if (next_field + fields_count > MAX_FIELDS) {
     fprintf(stderr, "[ERROR] Out of field storage\n");
     return 0;
   }
 
   int32_t obj_ref = (int32_t)next_obj++;
   jmevm_object *obj = &objects[obj_ref];
+  obj->type = JMEVM_OBJ_CLASS;
   obj->cf = cf;
   obj->fields = &field_storage[next_field];
 
   // Initialize fields to 0
-  for (uint16_t i = 0; i < cf->fields_count; i++) {
+  for (uint16_t i = 0; i < fields_count; i++) {
     obj->fields[i] = 0;
   }
 
-  next_field += cf->fields_count;
+  next_field += fields_count;
 
   printf("[DEBUG] Allocated object #%d of class at %p (fields: %d)\n", obj_ref,
-         (void *)cf, cf->fields_count);
+         (void *)cf, fields_count);
 
   return obj_ref;
+}
+
+int32_t jmevm_heap_alloc_array(jmevm_obj_type type, int32_t length) {
+  if (next_obj >= MAX_OBJECTS) {
+    fprintf(stderr, "[ERROR] Out of object slots\n");
+    return 0;
+  }
+
+  int32_t obj_ref = (int32_t)next_obj++;
+  jmevm_object *obj = &objects[obj_ref];
+  obj->type = type;
+  obj->cf = NULL;
+  obj->length = length;
+
+  size_t elem_size = (type == JMEVM_OBJ_ARRAY_INT) ? sizeof(int32_t) : 1;
+  obj->data = calloc((size_t)length, elem_size);
+
+  printf("[DEBUG] Allocated array #%d (type %d, length %d)\n", obj_ref, type,
+         length);
+  return obj_ref;
+}
+
+int32_t jmevm_array_length(int32_t array_ref) {
+  if (array_ref <= 0 || array_ref >= next_obj)
+    return 0;
+  return objects[array_ref].length;
+}
+
+int32_t jmevm_array_load_int(int32_t array_ref, int32_t index) {
+  if (array_ref <= 0 || array_ref >= next_obj)
+    return 0;
+  jmevm_object *obj = &objects[array_ref];
+  if (obj->type != JMEVM_OBJ_ARRAY_INT || index < 0 || index >= obj->length)
+    return 0;
+  return ((int32_t *)obj->data)[index];
+}
+
+void jmevm_array_store_int(int32_t array_ref, int32_t index, int32_t value) {
+  if (array_ref <= 0 || array_ref >= next_obj)
+    return;
+  jmevm_object *obj = &objects[array_ref];
+  if (obj->type != JMEVM_OBJ_ARRAY_INT || index < 0 || index >= obj->length)
+    return;
+  ((int32_t *)obj->data)[index] = value;
+}
+
+int8_t jmevm_array_load_byte(int32_t array_ref, int32_t index) {
+  if (array_ref <= 0 || array_ref >= next_obj)
+    return 0;
+  jmevm_object *obj = &objects[array_ref];
+  if (obj->type != JMEVM_OBJ_ARRAY_BYTE || index < 0 || index >= obj->length)
+    return 0;
+  return ((int8_t *)obj->data)[index];
+}
+
+void jmevm_array_store_byte(int32_t array_ref, int32_t index, int8_t value) {
+  if (array_ref <= 0 || array_ref >= next_obj)
+    return;
+  jmevm_object *obj = &objects[array_ref];
+  if (obj->type != JMEVM_OBJ_ARRAY_BYTE || index < 0 || index >= obj->length)
+    return;
+  ((int8_t *)obj->data)[index] = value;
 }
 
 int32_t jmevm_object_get_field(int32_t obj_ref, uint16_t field_index) {
@@ -56,7 +120,9 @@ int32_t jmevm_object_get_field(int32_t obj_ref, uint16_t field_index) {
   }
 
   jmevm_object *obj = &objects[obj_ref];
-  if (field_index >= obj->cf->fields_count) {
+  // String support: might not have a CF.
+  uint16_t max_fields = obj->cf ? obj->cf->fields_count : 2;
+  if (field_index >= max_fields) {
     fprintf(stderr, "[ERROR] Field index out of bounds: %d\n", field_index);
     return 0;
   }
@@ -74,7 +140,8 @@ void jmevm_object_put_field(int32_t obj_ref, uint16_t field_index,
   }
 
   jmevm_object *obj = &objects[obj_ref];
-  if (field_index >= obj->cf->fields_count) {
+  uint16_t max_fields = obj->cf ? obj->cf->fields_count : 2;
+  if (field_index >= max_fields) {
     fprintf(stderr, "[ERROR] Field index out of bounds: %d\n", field_index);
     return;
   }

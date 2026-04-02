@@ -269,13 +269,16 @@ jmevm_classfile *jmevm_classfile_load_from_buffer(const uint8_t *buf,
   cf->cp_methodref_nat_index = (uint16_t *)calloc(cp_count, sizeof(uint16_t));
   cf->cp_fieldref_class_index = (uint16_t *)calloc(cp_count, sizeof(uint16_t));
   cf->cp_fieldref_nat_index = (uint16_t *)calloc(cp_count, sizeof(uint16_t));
+  cf->cp_string_index = (uint16_t *)calloc(cp_count, sizeof(uint16_t));
+  cf->cp_integer = (int32_t *)calloc(cp_count, sizeof(int32_t));
   if (cf->cp_tag == NULL || cf->cp_utf8_off == NULL ||
       cf->cp_utf8_len == NULL || cf->cp_class_name_index == NULL ||
       cf->cp_nat_name_index == NULL || cf->cp_nat_desc_index == NULL ||
       cf->cp_methodref_class_index == NULL ||
       cf->cp_methodref_nat_index == NULL ||
       cf->cp_fieldref_class_index == NULL ||
-      cf->cp_fieldref_nat_index == NULL) {
+      cf->cp_fieldref_nat_index == NULL || cf->cp_string_index == NULL ||
+      cf->cp_integer == NULL) {
     jmevm_classfile_destroy(cf);
     return NULL;
   }
@@ -319,7 +322,7 @@ jmevm_classfile *jmevm_classfile_load_from_buffer(const uint8_t *buf,
       }
       break;
     case CONSTANT_String:
-      rc = cf_skip(&r, 2);
+      rc = cf_read_u2(&r, &cf->cp_string_index[i]);
       if (rc != JMEVM_CLASSFILE_OK) {
         jmevm_classfile_destroy(cf);
         return NULL;
@@ -406,6 +409,12 @@ jmevm_classfile *jmevm_classfile_load_from_buffer(const uint8_t *buf,
     }
 
     case CONSTANT_Integer:
+      rc = cf_read_u4(&r, (uint32_t *)&cf->cp_integer[i]);
+      if (rc != JMEVM_CLASSFILE_OK) {
+        jmevm_classfile_destroy(cf);
+        return NULL;
+      }
+      break;
     case CONSTANT_Float:
       rc = cf_skip(&r, 4);
       if (rc != JMEVM_CLASSFILE_OK) {
@@ -668,6 +677,8 @@ void jmevm_classfile_destroy(jmevm_classfile *cf) {
   free(cf->cp_methodref_nat_index);
   free(cf->cp_fieldref_class_index);
   free(cf->cp_fieldref_nat_index);
+  free(cf->cp_string_index);
+  free(cf->cp_integer);
   free(cf->fields);
   free(cf->methods);
   free(cf);

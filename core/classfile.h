@@ -47,6 +47,8 @@ struct jmevm_classfile {
   uint16_t
       *cp_fieldref_class_index;    /* [cp_count] valid for CONSTANT_Fieldref */
   uint16_t *cp_fieldref_nat_index; /* [cp_count] valid for CONSTANT_Fieldref */
+  uint16_t *cp_string_index;       /* [cp_count] valid for CONSTANT_String */
+  int32_t *cp_integer;             /* [cp_count] valid for CONSTANT_Integer */
 
   uint16_t
       this_class_name_cp_index; /* CONSTANT_Utf8 index for this class, or 0 */
